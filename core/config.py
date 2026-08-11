@@ -85,36 +85,78 @@ class AssetClass:
 UNIVERSE: tuple[AssetClass, ...] = (
     AssetClass(
         key="equity",
-        label="Global equities",
-        caveat="Placeholder. Proxy and history window not yet chosen.",
+        label="Public equity",
+        caveat=(
+            "ACWI from 2008-03; before that a fixed 55/33/12 blend of SPY, "
+            "EFA and EEM chain-linked behind it, because ACWI did not exist "
+            "and the financial crisis would otherwise fall outside the data."
+        ),
     ),
     AssetClass(
         key="fixed_income",
         label="Fixed income",
-        caveat="Placeholder. Global vs US aggregate not yet decided.",
+        caveat=(
+            "AGG: the US aggregate, not global. No non-USD exposure, so this "
+            "understates the volatility a global bond sleeve would carry."
+        ),
     ),
     AssetClass(
         key="private_equity",
         label="Private equity",
         caveat=(
-            "US small cap (Russell 2000), used as a replication proxy: PE "
-            "returns are largely reproducible with small-cap value plus "
-            "leverage. Correlates ~0.9 with public equity, so this sleeve is "
-            "not the diversifier its label implies. Listed-PE vehicles were "
-            "rejected as a proxy -- they hold leveraged PE *managers* and "
-            "returned ~2.6% a year since 2006, nothing like institutional PE."
+            "IWM (Russell 2000) as a replication proxy -- PE returns are "
+            "largely reproducible with small-cap value plus leverage. "
+            "Correlates around 0.9 with public equity, so this sleeve is not "
+            "the diversifier its label implies; the risk contribution table "
+            "exists to make that visible. Listed-PE vehicles were rejected: "
+            "they hold leveraged PE managers and returned about 2.6% a year "
+            "since 2006, nothing like institutional PE."
         ),
     ),
     AssetClass(
         key="gold",
         label="Gold",
-        caveat="Placeholder. Spot vs futures not yet decided.",
+        caveat=(
+            "GLD, a physical gold trust, net of a 0.40% fee. A component of "
+            "the commodities sleeve rather than an allocatable bucket on its "
+            "own -- the slider sets its share."
+        ),
+    ),
+    AssetClass(
+        key="commodities_ex_gold",
+        label="Commodities ex-gold",
+        caveat=(
+            "DBC, a broad futures basket carrying roll-yield effects that "
+            "spot commodity prices do not. The other component of the "
+            "commodities sleeve. Behaves very differently from gold: it fell "
+            "with equities in 2008 rather than rising."
+        ),
     ),
     AssetClass(
         key="cash",
         label="Cash",
-        caveat="Placeholder. Rate series and currency dependence not yet set.",
+        caveat=(
+            "The 13-week T-bill rate compounded into an index. Quoted as a "
+            "discount rate, which slightly understates a true bond-equivalent "
+            "yield -- immaterial for a small sleeve. Went briefly negative in "
+            "late 2015 and March 2020, which is real history, not an error."
+        ),
     ),
+)
+
+# The sleeve the user actually allocates to. Gold and commodities ex-gold are
+# combined into this before any portfolio is measured, so the optimizer never
+# sees them separately.
+SLEEVE_KEY = "commodities"
+SLEEVE_COMPONENTS = ("gold", "commodities_ex_gold")
+
+# What a user can put a weight on, after the sleeve is built.
+ALLOCATABLE_KEYS: tuple[str, ...] = (
+    "equity",
+    "fixed_income",
+    "private_equity",
+    SLEEVE_KEY,
+    "cash",
 )
 
 ASSET_KEYS: tuple[str, ...] = tuple(a.key for a in UNIVERSE)
