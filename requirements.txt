@@ -1,0 +1,9 @@
+# Regenerate from a clean venv before deploying:
+#     python scripts/check_env.py
+# and paste the pins it prints. Pins resolved against one Python version and
+# deployed onto another is a known way to lose an afternoon.
+numpy
+pandas
+scipy
+yfinance
+pytest

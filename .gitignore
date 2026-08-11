@@ -1,0 +1,32 @@
+# ---- Licensed / proprietary data -------------------------------------------
+# Terminal output is licensed to the firm operating the terminal, not to the
+# person who ran the query. Nothing derived from one belongs in this repo or
+# in any deployed container.
+*.xlsx
+*.xls
+*.xlsm
+data/private/
+
+# The public, reproducible dataset IS committed -- it is what makes the
+# results checkable by anyone.
+!data/public/
+!data/public/*.csv
+
+# ---- Secrets ---------------------------------------------------------------
+.env
+.env.*
+!.env.example
+
+# ---- Python ----------------------------------------------------------------
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ipynb_checkpoints/
+*.egg-info/
+
+# ---- Frontend --------------------------------------------------------------
+node_modules/
+dist/
+build/
