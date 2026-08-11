@@ -97,9 +97,12 @@ UNIVERSE: tuple[AssetClass, ...] = (
         key="private_equity",
         label="Private equity",
         caveat=(
-            "Placeholder. Listed PE is daily-marked, so it shows higher "
-            "volatility than appraisal-based institutional PE. That is the "
-            "honest figure, not an error."
+            "US small cap (Russell 2000), used as a replication proxy: PE "
+            "returns are largely reproducible with small-cap value plus "
+            "leverage. Correlates ~0.9 with public equity, so this sleeve is "
+            "not the diversifier its label implies. Listed-PE vehicles were "
+            "rejected as a proxy -- they hold leveraged PE *managers* and "
+            "returned ~2.6% a year since 2006, nothing like institutional PE."
         ),
     ),
     AssetClass(

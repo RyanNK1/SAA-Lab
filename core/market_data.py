@@ -13,18 +13,48 @@ Proxies, and how each differs from the thing it represents:
     equity           ACWI          Only exists from 2008-03. Before that, a
                                    blend of SPY/EFA/EEM chain-linked behind it
     fixed_income     AGG           US aggregate, NOT global. No non-USD exposure
-    private_equity   PSP           Listed PE. 1.80% expense ratio is a real and
-                                   permanent drag. Daily-marked, so volatility
-                                   is honest rather than appraisal-smoothed
+    private_equity   IWM           US small cap (Russell 2000), used as a
+                                   replication proxy for private equity --
+                                   see the note below
     gold             GLD           Physical gold trust, net of 0.40% fee
     commodities_ex_gold DBC        Broad futures basket. Carries roll yield
                                    effects that spot commodity prices do not
     cash             ^IRX          13-week T-bill *discount* rate, compounded
                                    here into an index
 
-The binding constraint on history is PSP (2006-10), which is why the dataset
+The binding constraint on history is DBC (2006-02), which is why the dataset
 starts there. That window includes the full run-up to the financial crisis,
 the crash, and everything since.
+
+On the private equity sleeve
+---------------------------
+Nothing freely available measures institutional private equity. The two
+candidates both compromise, in opposite directions:
+
+  Listed PE vehicles (PSP and similar) hold publicly traded private equity
+  *managers* -- leveraged financial holding companies, not the underlying
+  deals. PSP launched at the 2006 peak, fell roughly 70% in the crash, and
+  carries a ~1.4-1.8% expense ratio, so its realised return since inception is
+  about 2.6% a year. That figure is correct and it is not what an allocator
+  means by "private equity"; institutional buyout funds returned roughly
+  10-13% net over the same period.
+
+  Small-cap equity has no such distortion and returns in a plausible range.
+  It is also defensible on its merits: there is a substantial literature
+  arguing private equity returns are largely replicable with small-cap value
+  plus leverage (Stafford, 2017). This is the proxy the original Excel study
+  used.
+
+Small cap is used here, and the honest caveat is that it correlates heavily
+with public equity -- around 0.9 in monthly returns. So the "private equity"
+sleeve is not the diversifier its label suggests. The risk contribution table
+is built precisely to make that visible rather than let the label do the
+talking.
+
+Note also that institutional PE reports appraisal-based valuations, which
+smooth returns and understate both volatility and correlation with equities.
+A daily-marked proxy will always look riskier than an LP's own statements.
+That is the proxy being honest, not wrong.
 """
 
 from __future__ import annotations
@@ -40,7 +70,7 @@ from core.panels import PriceHistory, blend_levels, splice_levels
 # Assets fetched directly, one ticker each.
 DIRECT_TICKERS: dict[str, str] = {
     "fixed_income": "AGG",
-    "private_equity": "PSP",
+    "private_equity": "IWM",
     "gold": "GLD",
     "commodities_ex_gold": "DBC",
 }
@@ -71,6 +101,11 @@ ALL_TICKERS: dict[str, str] = {
 }
 
 DEFAULT_START = "2000-01-01"
+
+# Floor for the cash rate. Small negatives are genuine -- US T-bills traded
+# below zero in late 2015 and March 2020 -- so the guard sits well below
+# anything historically observed and catches bad quotes, not real markets.
+MIN_PLAUSIBLE_RATE = -0.01
 
 
 # ---------------------------------------------------------------------------
@@ -207,10 +242,22 @@ def fetch_cash_index(
 
     if rate.empty:
         raise RuntimeError(f"Cash rate series ({ticker}) is empty after cleaning")
-    if (rate < 0).any():
+
+    # Small negative T-bill yields are real, not errors. US bills traded
+    # slightly below zero in late 2015 and again in March 2020, when demand for
+    # safety was strong enough that buyers accepted a small loss for
+    # government paper. Rejecting those would discard genuine history.
+    #
+    # A large negative is a different matter -- that indicates a bad quote or a
+    # misread series, so the guard is set well below anything observed.
+    worst = float(rate.min())
+    if worst < MIN_PLAUSIBLE_RATE:
+        when = rate.idxmin()
         raise RuntimeError(
-            "Negative values in the cash rate series. Check the source before "
-            "proceeding -- this project's window should not contain them."
+            f"Cash rate hit {worst:.2%} on {when:%Y-%m-%d}, below the "
+            f"{MIN_PLAUSIBLE_RATE:.0%} floor. Small negatives are real (2015, "
+            f"March 2020); a figure this low indicates a bad quote or the "
+            f"wrong series."
         )
 
     return compound_rate_to_index(rate)

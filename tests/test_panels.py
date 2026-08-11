@@ -364,12 +364,52 @@ def test_month_end_resampling_keeps_the_last_level():
     assert list(monthly.levels.index.day) == [31, 30]
 
 
-def test_month_end_includes_a_partial_final_month():
-    """A month with only one day still produces a month-end observation. This
-    matters at the end of a live dataset, where the current month is partial."""
+def test_incomplete_final_month_is_dropped():
+    """62 days from 1 October reaches 1 December. That single December day is
+    a partial month and must not be reported as a full one -- otherwise a
+    dataset built mid-month carries an 11-day return labelled as a monthly
+    return, understating that month and every figure derived from it."""
     daily = pd.DataFrame(
         {"a": np.arange(1.0, 63.0)}, index=pd.date_range("2006-10-01", periods=62)
     )
     monthly = PriceHistory(daily).to_month_end()
+
+    assert len(monthly) == 2
+    assert monthly.levels.index[-1].month == 11
+    assert monthly.levels["a"].iloc[-1] == 61.0
+
+
+def test_incomplete_final_month_can_be_kept_explicitly():
+    daily = pd.DataFrame(
+        {"a": np.arange(1.0, 63.0)}, index=pd.date_range("2006-10-01", periods=62)
+    )
+    monthly = PriceHistory(daily).to_month_end(drop_incomplete=False)
     assert len(monthly) == 3
-    assert monthly.levels["a"].iloc[-1] == 62.0  # 1 Dec, the only December day
+    assert monthly.levels["a"].iloc[-1] == 62.0
+
+
+def test_month_ending_on_a_weekend_is_kept():
+    """31 May 2026 is a Sunday, so the last trading day is Friday 29 May. That
+    month is complete and must survive -- the tolerance exists for exactly
+    this, and being too strict would silently discard a real month."""
+    trading_days = pd.bdate_range("2026-04-01", "2026-05-29")
+    daily = pd.DataFrame(
+        {"a": np.linspace(100.0, 120.0, len(trading_days))}, index=trading_days
+    )
+    monthly = PriceHistory(daily).to_month_end()
+
+    assert monthly.levels.index[-1].month == 5
+    assert len(monthly) == 2
+
+
+def test_a_long_holiday_gap_still_drops_a_genuinely_partial_month():
+    """The tolerance must not be so generous that a half-finished month
+    survives. Data ending 10 August is 21 days short and has to go."""
+    daily = pd.DataFrame(
+        {"a": np.linspace(100.0, 130.0, 71)},
+        index=pd.date_range("2026-06-01", "2026-08-10"),
+    )
+    monthly = PriceHistory(daily).to_month_end()
+
+    assert monthly.levels.index[-1].month == 7
+    assert len(monthly) == 2

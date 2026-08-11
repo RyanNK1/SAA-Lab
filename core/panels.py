@@ -68,9 +68,39 @@ class PriceHistory:
     def __len__(self) -> int:
         return len(self.levels)
 
-    def to_month_end(self) -> PriceHistory:
-        """Resample to month-end observations, taking the last level in each."""
+    def to_month_end(
+        self, drop_incomplete: bool = True, tolerance_days: int = 5
+    ) -> PriceHistory:
+        """Resample to month-end observations, taking the last level in each.
+
+        By default the final month is dropped when the data does not actually
+        reach the end of it. Resampling labels every bucket with its month-end
+        date, so a run made on the 11th produces a row dated the 31st holding
+        eleven days of movement. That row is a partial-month return wearing a
+        full month's label, and every downstream calculation would treat it as
+        a complete observation -- understating that month's return and, through
+        it, the annualised figures.
+
+        `tolerance_days` allows for the month ending on a weekend or holiday,
+        when the last trading day legitimately falls a few days short. Only the
+        final bucket is checked; earlier gaps are the data source's business,
+        not a partial-period artefact.
+        """
         resampled = self.levels.resample("ME").last().dropna(how="all")
+
+        if drop_incomplete and len(resampled) > 0:
+            last_observation = self.levels.index[-1]
+            last_bucket = resampled.index[-1]
+            shortfall = (last_bucket - last_observation).days
+            if shortfall > tolerance_days:
+                resampled = resampled.iloc[:-1]
+                if len(resampled) == 0:
+                    raise ValueError(
+                        f"Dropping the incomplete final month left nothing. "
+                        f"Data ends {last_observation:%Y-%m-%d}, short of the "
+                        f"{last_bucket:%Y-%m-%d} month end."
+                    )
+
         return PriceHistory(resampled)
 
     def returns(self, periods_per_year: int = MONTHS_PER_YEAR) -> ReturnPanel:

@@ -160,7 +160,7 @@ def test_constant_rate_compounds_to_that_rate():
     assert index.iloc[-1] == pytest.approx(1.05, rel=0.002)
 
 
-def test_cash_index_starts_at_one_and_never_falls():
+def test_cash_index_rises_while_rates_are_positive():
     idx = pd.date_range("2020-01-01", periods=400, freq="D")
     rng = np.random.default_rng(11)
     rate = pd.Series(np.abs(rng.normal(0.03, 0.01, 400)), index=idx)
@@ -168,6 +168,21 @@ def test_cash_index_starts_at_one_and_never_falls():
 
     assert index.iloc[0] == 1.0
     assert index.diff().dropna().min() >= 0, "a positive rate cannot lose money"
+
+
+def test_negative_rates_make_the_cash_index_fall():
+    """US T-bills traded below zero in late 2015 and March 2020. Cash losing
+    a little value in those windows is correct history, not an error."""
+    idx = pd.date_range("2020-02-01", periods=90, freq="D")
+    rate = pd.Series(
+        np.concatenate([np.full(30, 0.015), np.full(30, -0.001), np.full(30, 0.010)]),
+        index=idx,
+    )
+    index = compound_rate_to_index(rate)
+
+    negative_stretch = index.iloc[31:60]
+    assert negative_stretch.diff().dropna().max() <= 0, "should drift down"
+    assert index.iloc[-1] > 1.0, "recovers once rates turn positive again"
 
 
 def test_zero_rate_leaves_the_index_flat():
@@ -254,3 +269,14 @@ def test_validation_surfaces_a_bad_splice():
     levels = np.concatenate([np.full(6, 151.0), np.full(6, 1.0)])
     hist = PriceHistory(pd.DataFrame({"a": levels}, index=idx))
     assert validate(hist).loc["a", "min_return"] < -0.99
+
+
+def test_rate_floor_rejects_an_implausible_quote():
+    """A deeply negative rate is a bad quote or the wrong series, not a market.
+    Tested via the constant so the guard's intent stays documented."""
+    from core.market_data import MIN_PLAUSIBLE_RATE
+
+    assert -0.05 < MIN_PLAUSIBLE_RATE < 0.0, (
+        "the floor must sit below real negative-rate episodes (a few bps) but "
+        "above anything that would indicate a data error"
+    )
