@@ -413,3 +413,38 @@ def test_a_long_holiday_gap_still_drops_a_genuinely_partial_month():
 
     assert monthly.levels.index[-1].month == 7
     assert len(monthly) == 2
+
+
+def test_select_rejects_duplicate_assets():
+    """A repeated asset makes the covariance matrix singular and lets a weight
+    vector fund the same thing twice while still summing to one. Both fail
+    silently and produce plausible-looking numbers."""
+    panel = _history(n=36).returns()
+    with pytest.raises(ValueError, match="Duplicate assets"):
+        panel.select(["equity", "equity"])
+
+
+def test_select_still_allows_reordering():
+    panel = _history(n=36).returns()
+    assert panel.select(["bonds", "equity"]).assets == ["bonds", "equity"]
+
+
+def test_blend_rejects_negative_weights():
+    """1.5 / -0.5 sums to 1.0 but is a short position, not a composition."""
+    frame = pd.DataFrame(
+        {"x": _walk(10, 0.005, 0.03, 7), "y": _walk(10, 0.005, 0.03, 8)},
+        index=_dates(10),
+    )
+    with pytest.raises(ValueError, match="Negative blend weights"):
+        blend_levels(frame, {"x": 1.5, "y": -0.5})
+
+
+def test_blend_allows_a_zero_weight():
+    """Excluding a component by setting it to zero is legitimate."""
+    frame = pd.DataFrame(
+        {"x": _walk(20, 0.005, 0.03, 9), "y": _walk(20, 0.005, 0.03, 10)},
+        index=_dates(20),
+    )
+    blended = blend_levels(frame, {"x": 1.0, "y": 0.0})
+    expected = frame["x"] / frame["x"].iloc[0]
+    assert np.allclose(blended.to_numpy(), expected.to_numpy(), atol=1e-12)

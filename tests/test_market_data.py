@@ -280,3 +280,21 @@ def test_rate_floor_rejects_an_implausible_quote():
         "the floor must sit below real negative-rate episodes (a few bps) but "
         "above anything that would indicate a data error"
     )
+
+
+def test_duplicate_rate_dates_are_rejected():
+    """A repeated date compounds again over a zero-day gap. Harmless
+    arithmetically, but it means the source returned something unexpected and
+    the rest of the series should not be trusted unexamined."""
+    idx = pd.DatetimeIndex(["2020-01-01", "2020-01-01", "2020-01-02"])
+    with pytest.raises(ValueError, match="Duplicate dates"):
+        compound_rate_to_index(pd.Series([0.05, 0.05, 0.05], index=idx))
+
+
+def test_descending_rate_index_is_sorted_not_rejected():
+    """Unlike price levels, a reversed rate series carries no directional
+    meaning -- each observation is a standalone quote, so sorting is safe."""
+    idx = pd.date_range("2020-01-01", periods=100, freq="D")[::-1]
+    out = compound_rate_to_index(pd.Series(np.full(100, 0.05), index=idx))
+    assert out.index.is_monotonic_increasing
+    assert out.iloc[0] == 1.0

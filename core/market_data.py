@@ -274,6 +274,15 @@ def compound_rate_to_index(rate: pd.Series) -> pd.Series:
     if len(rate) < 2:
         raise ValueError("Need at least 2 rate observations")
 
+    if rate.index.has_duplicates:
+        dupes = rate.index[rate.index.duplicated()].unique()
+        raise ValueError(
+            f"Duplicate dates in the rate series: {list(dupes[:5])}. Each "
+            f"would be compounded again over a zero-day gap, which is "
+            f"harmless here but indicates the source returned something "
+            f"unexpected."
+        )
+
     day_count = rate.index.to_series().diff().dt.days.fillna(0).clip(lower=0)
     growth = (1.0 + rate) ** (day_count / 365.0)
     index = growth.cumprod()

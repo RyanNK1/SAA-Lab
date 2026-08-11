@@ -200,10 +200,24 @@ class ReturnPanel:
         return pd.Timestamp(self.returns.index[-1])
 
     def select(self, assets: list[str]) -> ReturnPanel:
-        """Restrict to a subset of assets -- the user's asset-class picker."""
+        """Restrict to a subset of assets -- the user's asset-class picker.
+
+        Duplicates are rejected. A repeated asset would appear as two columns
+        holding identical returns, which makes the covariance matrix singular
+        and lets a weight vector allocate to the same thing twice while still
+        summing to one. Both failures are silent and produce plausible numbers.
+        """
         missing = [a for a in assets if a not in self.returns.columns]
         if missing:
             raise KeyError(f"Unknown assets {missing}. Have: {self.assets}")
+
+        seen = {a for a in assets if assets.count(a) > 1}
+        if seen:
+            raise ValueError(
+                f"Duplicate assets in selection: {sorted(seen)}. Each asset "
+                f"may appear once."
+            )
+
         return ReturnPanel(self.returns[assets], self.periods_per_year)
 
     def between(self, start, end) -> ReturnPanel:
@@ -327,6 +341,14 @@ def blend_levels(
     missing = set(weights) - set(components.columns)
     if missing:
         raise KeyError(f"No column for {sorted(missing)}")
+
+    negative = {k: v for k, v in weights.items() if v < -tol}
+    if negative:
+        raise ValueError(
+            f"Negative blend weights for {sorted(negative)}. A blend "
+            f"approximates an index from its parts; a short position in one "
+            f"part is not a composition."
+        )
 
     total = sum(weights.values())
     if abs(total - 1.0) > tol:
