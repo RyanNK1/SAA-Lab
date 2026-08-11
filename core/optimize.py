@@ -414,21 +414,31 @@ def optimize(
                 lambda w: w @ cov @ w, n, max_weight, _starting_points(n, seed)
             )
         else:
-            mu = panel.ann_return().to_numpy()
+            # The numerator must be the same quantity `PortfolioStats.sharpe`
+            # reports: the annualised *arithmetic* mean of excess returns. An
+            # earlier version maximised a geometric-return numerator here, so
+            # the solver optimised one thing and was scored on another -- which
+            # let a constrained answer appear to beat an unconstrained one, an
+            # impossibility that only showed up as a negative constraint cost.
+            ppy = panel.periods_per_year
             if isinstance(risk_free, pd.Series):
-                rf_annual = float((1.0 + risk_free.mean()) ** panel.periods_per_year - 1)
+                rf_periodic = risk_free.reindex(panel.returns.index).to_numpy()
             elif risk_free is None:
-                rf_annual = (
-                    float(panel.ann_return()["cash"]) if "cash" in assets else 0.0
+                rf_periodic = (
+                    panel.returns["cash"].to_numpy() if "cash" in assets else 0.0
                 )
             else:
-                rf_annual = float(risk_free)
+                rf_periodic = (1.0 + float(risk_free)) ** (1.0 / ppy) - 1.0
+
+            mean_returns = panel.returns.mean().to_numpy()
+            mean_rf = float(np.mean(rf_periodic))
 
             def negative_sharpe(w: np.ndarray) -> float:
                 vol = float(np.sqrt(max(w @ cov @ w, 0.0)))
                 if vol < MIN_MEANINGFUL_VOL:
                     return 0.0
-                return -(w @ mu - rf_annual) / vol
+                excess = (float(w @ mean_returns) - mean_rf) * ppy
+                return -excess / vol
 
             weights_array = _solve_smooth(
                 negative_sharpe, n, max_weight, _starting_points(n, seed)
