@@ -12,6 +12,11 @@ data/private/
 !data/public/
 !data/public/*.csv
 
+# ---- Private working notes -------------------------------------------------
+# Planning documents, scratch thinking, personal context. Useful while
+# building, not part of the deliverable.
+Notes/
+
 # ---- Secrets ---------------------------------------------------------------
 .env
 .env.*
