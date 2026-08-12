@@ -250,8 +250,16 @@ def _measure_samples(
 
     curve = np.cumprod(1.0 + paths, axis=0)
     curve = np.vstack([np.ones((1, curve.shape[1])), curve])
-    drawdowns = curve / np.maximum.accumulate(curve, axis=0) - 1.0
+    running_peak = np.maximum.accumulate(curve, axis=0)
+    drawdowns = curve / running_peak - 1.0
     max_dd = drawdowns.min(axis=0)
+
+    # Months spent below a previous high-water mark, over the whole period.
+    # The leading row is the starting point, which cannot be underwater.
+    underwater = (drawdowns[1:] < -1e-12).sum(axis=0)
+
+    # Months from the worst trough back to the peak that preceded it.
+    recovery, recovered = _months_to_recover(curve, drawdowns)
 
     # Must match `portfolio._ratio` exactly. A vectorised shortcut that scores
     # the degenerate case differently from the measurement layer means the
@@ -261,12 +269,53 @@ def _measure_samples(
     sortino = _vector_ratio(excess_ann, downside)
 
     frame = pd.DataFrame(samples, columns=assets)
+    frame["months_underwater"] = underwater
+    # `recovered` is deliberately not stored as a separate boolean column. A
+    # bool alongside floats makes every extracted row object-dtype, so pulling
+    # the weights out of a result stops behaving like numbers. `np.isinf` on
+    # months_to_recover answers the same question without that cost.
+    frame["months_to_recover"] = recovery
     frame["realised_return"] = realised
     frame["volatility"] = vol
     frame["sharpe"] = sharpe
     frame["sortino"] = sortino
     frame["max_drawdown"] = max_dd
     return frame
+
+
+def _months_to_recover(
+    curve: np.ndarray, drawdowns: np.ndarray
+) -> tuple[np.ndarray, np.ndarray]:
+    """Periods from each portfolio's worst trough back to its prior peak.
+
+    Two allocations with the same worst drawdown are very different
+    propositions if one is whole again in eight months and the other takes
+    forty. That difference lives entirely in the path.
+
+    Where the peak was never regained, infinity is returned rather than the
+    periods remaining. Returning the remainder would be a lower bound, and a
+    plausible-looking one -- but it would rank a portfolio that never recovered
+    from a late trough *ahead* of one that genuinely recovered in five months.
+    Infinity sorts last, which is the honest ordering, and the companion
+    boolean says which figures are real measurements.
+    """
+    n_periods, n_samples = curve.shape
+    trough_index = drawdowns.argmin(axis=0)
+    recovery = np.empty(n_samples, dtype=float)
+    recovered = np.zeros(n_samples, dtype=bool)
+
+    for j in range(n_samples):
+        trough = trough_index[j]
+        peak_value = curve[: trough + 1, j].max()
+        after = curve[trough:, j]
+        regained = np.flatnonzero(after >= peak_value)
+        if regained.size:
+            recovery[j] = float(regained[0])
+            recovered[j] = True
+        else:
+            recovery[j] = np.inf
+
+    return recovery, recovered
 
 
 def _vector_ratio(numerator: np.ndarray, denominator: np.ndarray) -> np.ndarray:
