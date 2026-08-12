@@ -412,3 +412,63 @@ def test_a_mandate_across_periods_names_the_binding_one(client):
     assert body["periods"]
     assert body["qualified_per_period"]
     assert "binding period" in body["explanation"]
+
+
+# ---------------------------------------------------------------------------
+# The interactive documentation
+# ---------------------------------------------------------------------------
+
+_EXAMPLE_ENDPOINTS = [
+    ("MeasureRequest", "/measure"),
+    ("OptimizeRequest", "/optimize"),
+    ("MandateRequest", "/mandate"),
+    ("SweepRequest", "/mandate/sweep"),
+    ("PeriodsRequest", "/periods/compare"),
+    ("RobustMandateRequest", "/mandate/across-periods"),
+]
+
+
+@pytest.mark.parametrize("schema_name,path", _EXAMPLE_ENDPOINTS)
+def test_the_documented_example_actually_works(client, schema_name, path):
+    """The docs page pre-fills its request body from these examples. Without
+    them it invents placeholders -- "start": "string", a 400% return target --
+    and the first thing anyone tries fails with a confusing error.
+
+    So the examples have to be real requests, and this asserts they stay that
+    way rather than drifting as the schemas change.
+    """
+    spec = client.get("/openapi.json").json()
+    examples = spec["components"]["schemas"][schema_name].get("examples")
+    assert examples, f"{schema_name} has no example for the docs to pre-fill"
+
+    response = client.post(path, json=examples[0])
+    assert response.status_code == 200, response.json()
+
+
+def test_a_malformed_date_names_the_field(client):
+    """pandas would say 'Unknown datetime string format, unable to parse:
+    string' -- true, and silent about which field or what a good value is."""
+    response = client.post(
+        "/measure", json={"weights": _weights(), "start": "string"}
+    )
+    assert response.status_code == 422
+
+    detail = str(response.json())
+    assert "start" in detail
+    assert "2010-01-01" in detail
+
+
+def test_a_partial_date_is_rejected(client):
+    response = client.post(
+        "/measure", json={"weights": _weights(), "start": "2010-1-1"}
+    )
+    assert response.status_code == 422
+
+
+def test_an_empty_date_is_treated_as_omitted(client):
+    """A frontend clearing a date input sends an empty string, which should
+    mean 'no bound' rather than being an error."""
+    response = client.post(
+        "/measure", json={"weights": _weights(), "start": "", "end": ""}
+    )
+    assert response.status_code == 200

@@ -1,0 +1,6 @@
+# Development and test dependencies, on top of api/requirements.txt.
+# Not needed to run the server -- these are for the test suite only, which is
+# why they are separate. Installing them on the deployment host would pull in
+# an HTTP client the application never uses.
+pytest
+httpx2   # required by fastapi.testclient; starlette < 1.6 wanted httpx instead

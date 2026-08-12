@@ -11,12 +11,34 @@ rather than silently solving an impossible mandate.
 
 from __future__ import annotations
 
+import re
+
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from core.config import Objective, Rebalance
 
 MAX_SAMPLES = 100_000
 INTERACTIVE_SAMPLES = 4_000
+
+_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def _check_date(value: str | None, field: str) -> str | None:
+    """Reject a malformed date at the boundary, naming the field.
+
+    Without this the string reaches pandas and comes back as "Unknown datetime
+    string format, unable to parse: string" -- true, and useless, because it
+    does not say which field or what a good value looks like. The interactive
+    documentation pre-fills string placeholders, so this is the first error
+    most callers will ever see.
+    """
+    if value is None or value == "":
+        return None
+    if not _DATE.match(value):
+        raise ValueError(
+            f"{field} must be a date like 2010-01-01, got {value!r}"
+        )
+    return value
 
 
 class ConstraintSpec(BaseModel):
@@ -45,8 +67,8 @@ class ConstraintSpec(BaseModel):
 class BaseRequest(BaseModel):
     """Settings every request shares."""
 
-    start: str | None = None
-    end: str | None = None
+    start: str | None = Field(None, examples=["2006-03-31"])
+    end: str | None = Field(None, examples=["2026-07-31"])
     gold_weight: float = Field(
         0.5, ge=0.0, le=1.0, description="1.0 is all gold, 0.0 all ex-gold"
     )
@@ -57,11 +79,35 @@ class BaseRequest(BaseModel):
     cost_bps: float = Field(0.0, ge=0.0, le=500.0)
     samples: int = Field(INTERACTIVE_SAMPLES, ge=100, le=MAX_SAMPLES)
 
+    @field_validator("start", "end")
+    @classmethod
+    def _dates_are_dates(cls, value: str | None, info) -> str | None:
+        return _check_date(value, info.field_name)
+
 
 class MeasureRequest(BaseRequest):
     """Measure one allocation the caller supplies."""
 
     weights: dict[str, float]
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "weights": {
+                        "equity": 0.55,
+                        "fixed_income": 0.125,
+                        "private_equity": 0.20,
+                        "commodities": 0.075,
+                        "cash": 0.05,
+                    },
+                    "gold_weight": 0.5,
+                    "rebalance": "annual",
+                    "cost_bps": 10,
+                }
+            ]
+        }
+    }
 
     @field_validator("weights")
     @classmethod
@@ -89,6 +135,24 @@ class OptimizeRequest(BaseRequest):
         description="What counts as equivalent to the best, e.g. 0.02 for 2%",
     )
 
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "objective": "max_sharpe",
+                    "gold_weight": 0.5,
+                    "samples": 4000,
+                    "tolerance": 0.02,
+                    "constraints": {
+                        "caps": {"private_equity": 0.20},
+                        "floors": {"cash": 0.05},
+                        "group_caps": {"growth": 0.60},
+                    },
+                }
+            ]
+        }
+    }
+
 
 class MandateRequest(BaseRequest):
     """Solve a mandate: what must be achieved, within what limits."""
@@ -100,6 +164,26 @@ class MandateRequest(BaseRequest):
     constraints: ConstraintSpec = Field(default_factory=ConstraintSpec)
     rank_by: str = "max_drawdown"
     limit: int = Field(20, ge=1, le=500)
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "target_return": 0.06,
+                    "max_volatility": 0.10,
+                    "gold_weight": 0.5,
+                    "samples": 4000,
+                    "rank_by": "max_drawdown",
+                    "limit": 10,
+                    "constraints": {
+                        "caps": {"private_equity": 0.20},
+                        "floors": {"cash": 0.05},
+                        "group_caps": {"growth": 0.60},
+                    },
+                }
+            ]
+        }
+    }
 
     @model_validator(mode="after")
     def _needs_a_requirement(self) -> MandateRequest:
@@ -126,6 +210,21 @@ class SweepRequest(MandateRequest):
     target_to: float = Field(0.12, gt=-1.0, lt=5.0)
     target_step: float = Field(0.01, gt=0.0, lt=1.0)
 
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "max_volatility": 0.10,
+                    "target_from": 0.02,
+                    "target_to": 0.12,
+                    "target_step": 0.01,
+                    "samples": 4000,
+                    "constraints": {"floors": {"cash": 0.05}},
+                }
+            ]
+        }
+    }
+
     @model_validator(mode="after")
     def _range_is_sensible(self) -> SweepRequest:
         if self.target_to <= self.target_from:
@@ -148,8 +247,29 @@ class PeriodsRequest(BaseRequest):
         None, ge=1, le=20, description="Rolling windows instead of named regimes"
     )
 
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {"objective": "max_sharpe", "gold_weight": 0.5, "samples": 3000}
+            ]
+        }
+    }
+
 
 class RobustMandateRequest(MandateRequest):
     """Require a mandate to hold in every regime, not merely overall."""
 
     rolling_years: int | None = Field(None, ge=1, le=20)
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "target_return": 0.04,
+                    "max_volatility": 0.12,
+                    "samples": 3000,
+                    "constraints": {"floors": {"cash": 0.05}},
+                }
+            ]
+        }
+    }

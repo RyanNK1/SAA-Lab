@@ -155,7 +155,13 @@ def prepare(request: Any) -> tuple[ReturnPanel, pd.Series | None]:
     Every endpoint starts here, so the meaning of a period or an asset subset
     cannot drift between them.
     """
-    panel = load_panel()
+    try:
+        panel = load_panel()
+    except RuntimeError as error:
+        # A missing dataset is an operational fault, not a bad request. Left
+        # unhandled it surfaces as a 500 with a stack trace, which tells a
+        # caller nothing about what to do.
+        raise HTTPException(status_code=503, detail=str(error)) from error
 
     if request.start or request.end:
         try:
