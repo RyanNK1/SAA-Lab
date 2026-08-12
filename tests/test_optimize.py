@@ -433,3 +433,22 @@ def test_near_optimal_is_empty_when_the_best_is_unbounded():
     measured = pd.DataFrame({"sortino": [np.inf, 0.5, 0.4]})
     kept = _near_optimal(measured, Objective.MAX_SORTINO, np.inf, 0.02)
     assert kept.empty
+
+
+def test_the_reported_range_always_contains_the_best_allocation():
+    """For an exactly-solved objective the optimum comes from the solver and
+    the near-optimal set comes from sampling, so the optimum is not a member of
+    that set. Without folding it in, the range can sit entirely to one side of
+    the answer it claims to describe."""
+    panel = _panel()
+    for objective in Objective:
+        for tolerance in (0.01, 0.05, 0.20):
+            result = optimize(
+                panel, objective, tolerance=tolerance, n_samples=FAST
+            )
+            ranges = result.ranges()
+            assert (ranges["low"] <= ranges["best"] + 1e-12).all(), (
+                f"{objective.value} at tolerance {tolerance}"
+            )
+            assert (ranges["best"] <= ranges["high"] + 1e-12).all()
+            assert (ranges["spread"] >= -1e-12).all()

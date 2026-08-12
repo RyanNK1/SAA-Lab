@@ -111,21 +111,31 @@ class OptimizationResult:
         support: structurally different portfolios routinely land within a
         fraction of a percent of each other. This is the honest answer --
         "equity anywhere between 45% and 60%, and it barely matters".
+
+        The best allocation is folded into the span. For an exactly-solved
+        objective the optimum comes from the solver while the near-optimal set
+        comes from sampling, so the optimum is not in that set and the raw
+        sampled range can sit entirely to one side of it -- producing a "range"
+        that excludes the answer it describes. Widening to include the best
+        allocation keeps the two halves of the output talking about the same
+        thing.
         """
         if self.near_optimal.empty:
             return pd.DataFrame(
-                {"best": self.weights, "low": self.weights, "high": self.weights}
+                {
+                    "best": self.weights,
+                    "low": self.weights,
+                    "high": self.weights,
+                    "spread": 0.0,
+                }
             )
 
         assets = list(self.weights.index)
+        low = np.minimum(self.near_optimal[assets].min(), self.weights)
+        high = np.maximum(self.near_optimal[assets].max(), self.weights)
+
         return pd.DataFrame(
-            {
-                "best": self.weights,
-                "low": self.near_optimal[assets].min(),
-                "high": self.near_optimal[assets].max(),
-                "spread": self.near_optimal[assets].max()
-                - self.near_optimal[assets].min(),
-            }
+            {"best": self.weights, "low": low, "high": high, "spread": high - low}
         )
 
     def describe(self) -> str:

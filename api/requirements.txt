@@ -1,0 +1,12 @@
+# Regenerate from a clean venv before deploying:
+#     python scripts/check_env.py
+# Pins below are from the authoring sandbox and are NOT verified on the
+# deployment interpreter.
+#
+# On Render set: PYTHON_VERSION to match .python-version, PYTHONUNBUFFERED=1
+# Start command:  uvicorn api.main:app --host 0.0.0.0 --port $PORT
+numpy
+pandas
+scipy
+fastapi
+uvicorn[standard]
