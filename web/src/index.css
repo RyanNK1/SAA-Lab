@@ -1,0 +1,89 @@
+@import "tailwindcss";
+
+/*
+  Design tokens.
+
+  The direction is a research desk, not a consumer dashboard: the subject's
+  world is mandates, committee papers and terminal output, where figures are
+  dense and precise and the interface stays out of the way.
+
+  The palette is deliberately cool -- a grey-green paper rather than cream, and
+  a deep petrol rather than a warm accent. Brass appears only for the gold
+  sleeve, where it means something, and brick only for a mandate that cannot be
+  met. No colour is decorative; each one carries a state.
+*/
+
+@theme {
+  --color-ground: #eef0ee;
+  --color-surface: #f8faf8;
+  --color-ink: #131a18;
+  --color-muted: #5f6b66;
+  --color-line: #d3d9d5;
+  --color-line-strong: #a9b3ae;
+
+  --color-primary: #0e4f4a;
+  --color-primary-soft: #d5e2e0;
+  --color-brick: #9e2b25;
+  --color-brick-soft: #f0dedd;
+  --color-brass: #c8952a;
+
+  --font-display: "IBM Plex Mono", ui-monospace, monospace;
+  --font-body: "Inter Tight", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+
+@layer base {
+  * {
+    border-color: var(--color-line);
+  }
+
+  body {
+    background: var(--color-ground);
+    color: var(--color-ink);
+    font-family: var(--font-body);
+    font-feature-settings: "cv05" 1;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Every figure is tabular. Columns of weights and returns have to line up
+     digit for digit, or the eye cannot compare rows -- which is most of what
+     this interface is for. */
+  .tabular {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background: var(--color-primary);
+    color: var(--color-surface);
+  }
+}
+
+@layer components {
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    font-weight: 500;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--color-muted);
+  }
+
+  .rule {
+    border-top: 1px solid var(--color-line);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
