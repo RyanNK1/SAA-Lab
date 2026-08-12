@@ -472,3 +472,89 @@ def test_an_empty_date_is_treated_as_omitted(client):
         "/measure", json={"weights": _weights(), "start": "", "end": ""}
     )
     assert response.status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# The allocatable universe
+# ---------------------------------------------------------------------------
+
+def test_meta_reports_the_commodities_sleeve_as_allocatable():
+    """The sleeve is what a user actually puts a weight on, but it does not
+    exist in the raw data -- it is built from two components at request time.
+    Reporting only the underlying series left the picker one bucket short."""
+    from fastapi.testclient import TestClient
+    from api.main import app
+
+    body = TestClient(app).get("/meta").json()
+    keys = [a["key"] for a in body["assets"]]
+
+    assert "commodities" in keys
+    assert "gold" not in keys, "a component, not a bucket"
+    assert "commodities_ex_gold" not in keys
+    assert len(keys) == 5
+
+
+def test_every_asset_discloses_its_proxy(client):
+    """A user reading 'private equity' deserves to know they are looking at a
+    small-cap index."""
+    body = client.get("/meta").json()
+
+    for asset in body["assets"]:
+        assert asset["proxy"].strip()
+    for component in body["sleeve"]["components"]:
+        assert component["proxy"].strip()
+        assert component["label"].strip()
+
+
+def test_limits_can_be_set_on_every_asset_class(client):
+    """A policy statement sets bounds bucket by bucket, so every one has to
+    accept a floor and a cap -- including the sleeve."""
+    response = client.post(
+        "/mandate",
+        json={
+            "target_return": 0.03,
+            "max_volatility": 0.14,
+            "constraints": {
+                "floors": {"cash": 0.05, "fixed_income": 0.10},
+                "caps": {
+                    "equity": 0.50,
+                    "private_equity": 0.20,
+                    "commodities": 0.25,
+                },
+                "group_caps": {"growth": 0.60},
+            },
+            **FAST,
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+
+    if not body["feasible"]:
+        pytest.skip("mandate not reachable on this dataset")
+
+    for allocation in body["allocations"]:
+        assert allocation["cash"] >= 0.05 - 1e-6
+        assert allocation["fixed_income"] >= 0.10 - 1e-6
+        assert allocation["equity"] <= 0.50 + 1e-6
+        assert allocation["private_equity"] <= 0.20 + 1e-6
+        assert allocation["commodities"] <= 0.25 + 1e-6
+        assert allocation["equity"] + allocation["private_equity"] <= 0.60 + 1e-6
+
+
+def test_the_sleeve_split_is_reported(client):
+    """A 20% commodities weight at a 60/40 slider is 12% gold and 8% everything
+    else, and those behave nothing alike. Reporting only the total hides the
+    decision the slider made."""
+    body = client.post(
+        "/mandate",
+        json={"target_return": 0.02, "max_volatility": 0.20, "gold_weight": 0.6, **FAST},
+    ).json()
+
+    if not body["feasible"]:
+        pytest.skip("mandate not reachable on this dataset")
+
+    split = body["sleeve_split"]
+    assert split["gold_weight"] == pytest.approx(0.6)
+    assert split["gold"] + split["commodities_ex_gold"] == pytest.approx(
+        split["sleeve_weight"], abs=1e-9
+    )

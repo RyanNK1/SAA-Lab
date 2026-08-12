@@ -38,7 +38,14 @@ from api.schemas import (
     RobustMandateRequest,
     SweepRequest,
 )
-from core.config import UNIVERSE, Objective, Rebalance
+from core.config import (
+    SLEEVE_COMPONENTS,
+    UNIVERSE,
+    Objective,
+    Rebalance,
+    allocatable_universe,
+    asset,
+)
 from core.constraints import Constraints, GroupLimit, optimize_constrained
 from core.mandate import (
     RANKABLE,
@@ -244,7 +251,6 @@ def health() -> dict[str, Any]:
 def meta() -> dict[str, Any]:
     """Everything a frontend needs to build its controls."""
     panel = load_panel()
-    sleeved = build_sleeve(panel, 0.5)
 
     return {
         "coverage": {
@@ -252,18 +258,31 @@ def meta() -> dict[str, Any]:
             "end": panel.end.strftime("%Y-%m-%d"),
             "months": len(panel),
         },
+        # The buckets a weight can actually be placed on. Gold and commodities
+        # ex-gold do not appear: by the time an allocation is made they have
+        # been combined into the sleeve, so offering them as separate choices
+        # would present controls the engine rejects.
         "assets": [
             {
                 "key": item.key,
                 "label": item.label,
+                "proxy": item.proxy,
                 "caveat": item.caveat,
-                "allocatable": item.key in sleeved.assets,
+                "allocatable": True,
             }
-            for item in UNIVERSE
+            for item in allocatable_universe()
         ],
         "sleeve": {
             "key": SLEEVE,
-            "components": ["gold", "commodities_ex_gold"],
+            "components": [
+                {
+                    "key": component,
+                    "label": asset(component).label,
+                    "proxy": asset(component).proxy,
+                    "caveat": asset(component).caveat,
+                }
+                for component in SLEEVE_COMPONENTS
+            ],
             "note": (
                 "One bucket. The slider sets its internal split, and the "
                 "sleeve's return, risk and correlations all change with it."
@@ -276,7 +295,7 @@ def meta() -> dict[str, Any]:
         "regimes": [
             {"label": p.label, "start": p.start.strftime("%Y-%m-%d"),
              "end": p.end.strftime("%Y-%m-%d")}
-            for p in resolve_periods(sleeved)
+            for p in resolve_periods(build_sleeve(panel, 0.5))
         ],
         "disclaimer": (
             "Every result is hindsight: what would have been best over the "
@@ -493,6 +512,19 @@ def mandate_endpoint(request: MandateRequest) -> dict[str, Any]:
 
     ranked = result.ranked(request.rank_by, limit=request.limit)
     payload["ranked_by"] = request.rank_by
+
+    # What the commodities weight means underneath. A user allocating 20% to
+    # commodities at a 60/40 slider is holding 12% gold and 8% everything else,
+    # and those two behave nothing alike -- so reporting only the sleeve total
+    # hides the decision the slider actually made.
+    if SLEEVE in panel.assets and not ranked.empty:
+        sleeve_weight = float(ranked.iloc[0][SLEEVE])
+        payload["sleeve_split"] = {
+            "sleeve_weight": _clean(sleeve_weight),
+            "gold_weight": _clean(request.gold_weight),
+            "gold": _clean(sleeve_weight * request.gold_weight),
+            "commodities_ex_gold": _clean(sleeve_weight * (1.0 - request.gold_weight)),
+        }
     payload["allocations"] = _frame_to_records(ranked)
     payload["envelope"] = _frame_to_records(
         result.envelope().reset_index(names="asset")

@@ -54,14 +54,22 @@ async function request<T>(path: string, body?: unknown, signal?: AbortSignal): P
 export interface AssetMeta {
   key: string;
   label: string;
+  proxy: string;
   caveat: string;
   allocatable: boolean;
+}
+
+export interface SleeveComponent {
+  key: string;
+  label: string;
+  proxy: string;
+  caveat: string;
 }
 
 export interface Meta {
   coverage: { start: string; end: string; months: number };
   assets: AssetMeta[];
-  sleeve: { key: string; components: string[]; note: string };
+  sleeve: { key: string; components: SleeveComponent[]; note: string };
   objectives: string[];
   rebalance_schedules: string[];
   rankable: string[];
@@ -120,6 +128,13 @@ export interface Relaxation {
   description: string;
 }
 
+export interface SleeveSplit {
+  sleeve_weight: number;
+  gold_weight: number;
+  gold: number;
+  commodities_ex_gold: number;
+}
+
 export interface MandateResult {
   mandate: string;
   feasible: boolean;
@@ -130,6 +145,7 @@ export interface MandateResult {
   ranked_by?: string;
   allocations?: Allocation[];
   envelope?: EnvelopeRow[];
+  sleeve_split?: SleeveSplit;
 }
 
 export const api = {

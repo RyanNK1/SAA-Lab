@@ -10,6 +10,7 @@
  * that does not belong to it.
  */
 
+import { useState } from "react";
 import { cn } from "@/lib/utils";
 import type { ReactNode, InputHTMLAttributes, SelectHTMLAttributes } from "react";
 
@@ -40,18 +41,23 @@ export function Panel({
 export function Field({
   label,
   hint,
+  explain,
   children,
 }: {
   label: string;
   hint?: string;
+  explain?: ReactNode;
   children: ReactNode;
 }) {
   return (
-    <label className="block">
-      <span className="mb-1.5 block text-[0.8125rem] font-medium text-ink">{label}</span>
+    <div className="block">
+      <span className="mb-1.5 flex items-center text-[0.8125rem] font-medium text-ink">
+        {label}
+        {explain}
+      </span>
       {children}
       {hint && <span className="mt-1 block text-xs text-muted">{hint}</span>}
-    </label>
+    </div>
   );
 }
 
@@ -171,5 +177,48 @@ export function Stat({
         {value}
       </div>
     </div>
+  );
+}
+
+/** An explanation attached to a control that needs one.
+ *
+ * Rebalancing and trading cost both change the answer materially while meaning
+ * nothing to someone who has not met them before, and a field whose effect is
+ * invisible is a field people leave alone. The note opens on click rather than
+ * hover so it works on a touchscreen and can be read at leisure.
+ */
+export function Explainer({ title, children }: { title: string; children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <span className="relative inline-flex">
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        aria-expanded={open}
+        aria-label={`What ${title} means`}
+        className={cn(
+          "ml-1.5 inline-flex h-4 w-4 items-center justify-center rounded-full border text-[0.625rem] leading-none transition-colors",
+          open
+            ? "border-primary bg-primary text-surface"
+            : "border-line-strong text-muted hover:border-ink hover:text-ink",
+        )}
+      >
+        i
+      </button>
+
+      {open && (
+        <>
+          <span
+            className="fixed inset-0 z-10"
+            onClick={() => setOpen(false)}
+            aria-hidden
+          />
+          <span className="absolute left-0 top-6 z-20 block w-72 border border-line-strong bg-surface p-3 text-xs leading-relaxed font-normal text-muted shadow-[0_2px_12px_rgba(19,26,24,0.10)]">
+            {children}
+          </span>
+        </>
+      )}
+    </span>
   );
 }

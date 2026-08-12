@@ -25,16 +25,20 @@ function buildRequest(state: FormState, rankBy: string, allAssets: string[]): Ma
   const floors: Record<string, number> = {};
   const groupCaps: Record<string, number> = {};
 
-  const peCap = asFraction(state.peCap);
-  const cashFloor = asFraction(state.cashFloor);
-  const growthCap = asFraction(state.growthCap);
-
   const chosen = state.assets.length === 0 ? allAssets : state.assets;
 
   // A limit on an asset the user has deselected would be rejected as unknown,
-  // so only send the ones that are actually in play.
-  if (peCap !== null && chosen.includes("private_equity")) caps.private_equity = peCap;
-  if (cashFloor !== null && chosen.includes("cash")) floors.cash = cashFloor;
+  // so only the buckets actually in play are sent.
+  for (const key of chosen) {
+    const limit = state.limits[key];
+    if (!limit) continue;
+    const floor = asFraction(limit.floor);
+    const cap = asFraction(limit.cap);
+    if (floor !== null) floors[key] = floor;
+    if (cap !== null) caps[key] = cap;
+  }
+
+  const growthCap = asFraction(state.growthCap);
   if (growthCap !== null && chosen.some((a) => a === "equity" || a === "private_equity")) {
     groupCaps.growth = growthCap;
   }
@@ -117,9 +121,7 @@ export default function App() {
           </div>
 
           <p className="mt-6 border-l-2 border-brass pl-3 text-xs leading-relaxed text-muted">
-            Every result is hindsight: what would have been best over the period
-            chosen, knowing what happened in it. That is exactly answerable, and
-            it is not a forecast.
+            Result in hindsight, not a forecast.
           </p>
         </div>
       </header>
@@ -202,11 +204,31 @@ export default function App() {
         )}
       </main>
 
-      <footer className="mt-12 border-t border-line">
-        <div className="mx-auto max-w-6xl px-6 py-6 text-xs leading-relaxed text-muted">
-          Built from public price data. Private equity is proxied by small-cap
-          equity, which correlates around 0.9 with public equity — so that
-          sleeve is not the diversifier its label suggests.
+      <footer className="mt-12 border-t border-line bg-surface">
+        <div className="mx-auto max-w-6xl px-6 py-7">
+          <h2 className="eyebrow mb-3">what each asset class is</h2>
+          <dl className="grid gap-x-8 gap-y-2 text-xs leading-relaxed sm:grid-cols-2">
+            {meta.data?.assets.map((asset) => (
+              <div key={asset.key} className="flex gap-3">
+                <dt className="w-28 shrink-0 text-ink">{asset.label}</dt>
+                <dd className="text-muted">{asset.proxy}</dd>
+              </div>
+            ))}
+            {meta.data?.sleeve.components.map((component) => (
+              <div key={component.key} className="flex gap-3">
+                <dt className="w-28 shrink-0 pl-3 text-muted">
+                  &mdash; {component.label}
+                </dt>
+                <dd className="text-muted">{component.proxy}</dd>
+              </div>
+            ))}
+          </dl>
+          <p className="mt-4 border-t border-line pt-4 text-xs leading-relaxed text-muted">
+            Proxies, not the institutional instruments themselves. Private
+            equity is stood in for by small-cap equity, which correlates around
+            0.9 with public equity — so that sleeve is not the diversifier its
+            label suggests.
+          </p>
         </div>
       </footer>
     </div>

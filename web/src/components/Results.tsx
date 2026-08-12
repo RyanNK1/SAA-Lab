@@ -161,6 +161,55 @@ export function Results({
         <Envelope rows={result.envelope ?? []} best={best} />
       </Panel>
 
+      {result.sleeve_split && (
+        <Panel title="what the commodities sleeve holds">
+          <div className="flex flex-wrap items-baseline gap-x-8 gap-y-3">
+            <div>
+              <div className="eyebrow mb-1">sleeve</div>
+              <div className="tabular text-lg text-ink">
+                {pct(result.sleeve_split.sleeve_weight)}
+              </div>
+            </div>
+            <span className="text-muted">splits into</span>
+            <div>
+              <div className="eyebrow mb-1">gold</div>
+              <div className="tabular text-lg" style={{ color: "var(--color-brass)" }}>
+                {pct(result.sleeve_split.gold)}
+              </div>
+            </div>
+            <div>
+              <div className="eyebrow mb-1">commodities ex-gold</div>
+              <div className="tabular text-lg text-ink">
+                {pct(result.sleeve_split.commodities_ex_gold)}
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-4 flex h-2 overflow-hidden border border-line">
+            <div
+              style={{
+                width: `${result.sleeve_split.gold_weight * 100}%`,
+                background: "var(--color-brass)",
+              }}
+            />
+            <div
+              style={{
+                width: `${(1 - result.sleeve_split.gold_weight) * 100}%`,
+                background: "var(--color-primary)",
+                opacity: 0.35,
+              }}
+            />
+          </div>
+
+          <p className="mt-3 text-xs leading-relaxed text-muted">
+            For the allocation ranked first, at a{" "}
+            {pct(result.sleeve_split.gold_weight, 0)} gold setting. The split is
+            the same proportion for every qualifying allocation — only the total
+            changes.
+          </p>
+        </Panel>
+      )}
+
       <Panel
         title="qualifying allocations"
         aside={
