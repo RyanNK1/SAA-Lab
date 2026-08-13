@@ -148,8 +148,104 @@ export interface MandateResult {
   sleeve_split?: SleeveSplit;
 }
 
+export interface PeriodsBody {
+  gold_weight: number;
+  assets?: string[];
+  rebalance: string;
+  cost_bps: number;
+  samples: number;
+  objective: string;
+  constraints: ConstraintSpec;
+  rolling_years?: number | null;
+}
+
+export interface PeriodRow extends Record<string, number | string> {
+  period: string;
+  start: string;
+  end: string;
+  months: number;
+  return: number;
+  vol: number;
+  sharpe: number;
+  sortino: number;
+  max_dd: number;
+}
+
+export interface StabilityRow {
+  asset: string;
+  mean: number;
+  min: number;
+  max: number;
+  spread: number;
+  std: number;
+}
+
+export interface PremiumRow {
+  period: string;
+  chosen_for_it: number;
+  others_average: number;
+  best_other: number;
+  premium: number;
+}
+
+export interface PeriodsResult {
+  objective: string;
+  by_period: PeriodRow[];
+  stability: StabilityRow[];
+  cross_period: {
+    chosen_for: string[];
+    measured_in: string[];
+    sharpe: (number | null)[][];
+    note: string;
+  };
+  hindsight_premium: PremiumRow[];
+  average_premium: number;
+  consensus: Record<string, number>;
+}
+
+export interface TrackBody {
+  gold_weight: number;
+  assets?: string[];
+  rebalance: string;
+  cost_bps: number;
+  samples: number;
+  allocations: { label: string; weights: Record<string, number> }[];
+  periods?: string[] | null;
+}
+
+export interface PeriodPerformance {
+  period: string;
+  months: number;
+  realised_return: number;
+  volatility: number;
+  sharpe: number;
+  sortino: number;
+  max_drawdown: number;
+  months_underwater: number;
+}
+
+export interface TrackedAllocation {
+  label: string;
+  weights: Record<string, number>;
+  by_period: PeriodPerformance[];
+  best_period: string | null;
+  worst_period: string | null;
+  negative_periods: number;
+  worst_drawdown: number;
+  return_spread: number | null;
+}
+
+export interface TrackResult {
+  periods: { label: string; start: string; end: string; months: number }[];
+  allocations: TrackedAllocation[];
+}
+
 export const api = {
   meta: () => request<Meta>("/meta"),
   mandate: (body: MandateBody, signal?: AbortSignal) =>
     request<MandateResult>("/mandate", body, signal),
+  periods: (body: PeriodsBody, signal?: AbortSignal) =>
+    request<PeriodsResult>("/periods/compare", body, signal),
+  track: (body: TrackBody, signal?: AbortSignal) =>
+    request<TrackResult>("/periods/track", body, signal),
 };

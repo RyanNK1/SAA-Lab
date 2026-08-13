@@ -558,3 +558,92 @@ def test_the_sleeve_split_is_reported(client):
     assert split["gold"] + split["commodities_ex_gold"] == pytest.approx(
         split["sleeve_weight"], abs=1e-9
     )
+
+
+# ---------------------------------------------------------------------------
+# Tracking real allocations through regimes
+# ---------------------------------------------------------------------------
+
+def _candidate() -> dict:
+    return {
+        "label": "balanced",
+        "weights": {
+            "equity": 0.35,
+            "fixed_income": 0.35,
+            "private_equity": 0.10,
+            "commodities": 0.15,
+            "cash": 0.05,
+        },
+    }
+
+
+def test_tracking_measures_a_real_allocation_in_every_regime(client):
+    """The alternative -- optimising per period -- produces corner solutions
+    nobody would hold, so what they endured is not informative. These are
+    candidates a person could actually own."""
+    body = client.post(
+        "/periods/track", json={"allocations": [_candidate()], **FAST}
+    ).json()
+
+    assert len(body["periods"]) >= 3
+    tracked = body["allocations"][0]
+    assert len(tracked["by_period"]) == len(body["periods"])
+    assert tracked["best_period"] in [p["label"] for p in body["periods"]]
+    assert tracked["worst_period"] in [p["label"] for p in body["periods"]]
+
+
+def test_tracking_reports_where_an_allocation_struggled(client):
+    body = client.post(
+        "/periods/track", json={"allocations": [_candidate()], **FAST}
+    ).json()
+    tracked = body["allocations"][0]
+
+    returns = [entry["realised_return"] for entry in tracked["by_period"]]
+    assert tracked["negative_periods"] == sum(1 for r in returns if r < 0)
+    assert tracked["worst_drawdown"] <= 0
+
+
+def test_regimes_can_be_narrowed(client):
+    all_periods = client.post(
+        "/periods/track", json={"allocations": [_candidate()], **FAST}
+    ).json()["periods"]
+    wanted = [all_periods[0]["label"], all_periods[-1]["label"]]
+
+    body = client.post(
+        "/periods/track",
+        json={"allocations": [_candidate()], "periods": wanted, **FAST},
+    ).json()
+
+    assert [p["label"] for p in body["periods"]] == wanted
+
+
+def test_weights_not_matching_the_selected_assets_are_rejected_by_name(client):
+    """A silently-dropped asset would measure a different portfolio from the
+    one the user picked, and the numbers would look entirely plausible."""
+    response = client.post(
+        "/periods/track",
+        json={
+            "allocations": [{"label": "short", "weights": {"equity": 0.6, "cash": 0.4}}],
+            **FAST,
+        },
+    )
+    assert response.status_code == 422
+    assert "short" in str(response.json())
+
+
+def test_several_allocations_are_tracked_together(client):
+    defensive = {
+        "label": "defensive",
+        "weights": {
+            "equity": 0.15,
+            "fixed_income": 0.55,
+            "private_equity": 0.05,
+            "commodities": 0.10,
+            "cash": 0.15,
+        },
+    }
+    body = client.post(
+        "/periods/track", json={"allocations": [_candidate(), defensive], **FAST}
+    ).json()
+
+    assert [a["label"] for a in body["allocations"]] == ["balanced", "defensive"]

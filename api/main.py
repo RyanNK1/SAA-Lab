@@ -31,6 +31,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from api.schemas import (
     ConstraintSpec,
+    TrackRequest,
     MandateRequest,
     MeasureRequest,
     OptimizeRequest,
@@ -634,6 +635,109 @@ def robust_mandate_endpoint(request: RobustMandateRequest) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 # Periods
 # ---------------------------------------------------------------------------
+
+@app.post("/periods/track")
+def track_endpoint(request: TrackRequest) -> dict[str, Any]:
+    """How specific allocations fared in each regime.
+
+    Every allocation is measured in every period, which is a different question
+    from optimising per period. A per-period optimum is a corner solution --
+    everything into whatever happened to work -- and no committee would hold
+    it, so what it endured is not informative. A candidate that came out of a
+    mandate is something a person might actually own, and how it behaved
+    through a crisis is worth knowing.
+    """
+    panel, _ = prepare(request)
+
+    periods = (
+        rolling_periods(panel, years=request.rolling_years)
+        if request.rolling_years
+        else resolve_periods(panel)
+    )
+    if request.periods:
+        wanted = set(request.periods)
+        periods = [p for p in periods if p.label in wanted]
+    if not periods:
+        raise HTTPException(
+            status_code=422, detail="No periods match the selection"
+        )
+
+    spec = _rebalance_spec(request)
+    rows = []
+
+    for candidate in request.allocations:
+        missing = set(panel.assets) - set(candidate.weights)
+        extra = set(candidate.weights) - set(panel.assets)
+        if missing or extra:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"{candidate.label}: weights do not match the selected "
+                    f"assets. Missing {sorted(missing)}, unexpected "
+                    f"{sorted(extra)}."
+                ),
+            )
+
+        measured = []
+        for period in periods:
+            window = panel.between(period.start, period.end)
+            cash = window.returns["cash"] if "cash" in window.assets else None
+
+            try:
+                if spec.schedule is Rebalance.MONTHLY and spec.cost_bps == 0.0:
+                    stats = portfolio_stats(window, candidate.weights, risk_free=cash)
+                else:
+                    path = simulate(window, candidate.weights, spec)
+                    stats = measure_path(window, path, risk_free=cash)
+            except (ValueError, KeyError) as error:
+                raise HTTPException(status_code=422, detail=str(error)) from error
+
+            measured.append(
+                {
+                    "period": period.label,
+                    "months": len(window),
+                    "realised_return": _clean(stats.realised_return),
+                    "volatility": _clean(stats.volatility),
+                    "sharpe": _clean(stats.sharpe),
+                    "sortino": _clean(stats.sortino),
+                    "max_drawdown": _clean(stats.max_drawdown),
+                    "months_underwater": _clean(stats.drawdown.months_underwater),
+                }
+            )
+
+        returns = [m["realised_return"] for m in measured if m["realised_return"] is not None]
+        rows.append(
+            {
+                "label": candidate.label,
+                "weights": {k: _clean(v) for k, v in candidate.weights.items()},
+                "by_period": measured,
+                # The summary a person actually wants: where it did well, where
+                # it hurt, and how often it lost money at all.
+                "best_period": max(measured, key=lambda m: m["realised_return"])["period"]
+                if returns
+                else None,
+                "worst_period": min(measured, key=lambda m: m["realised_return"])["period"]
+                if returns
+                else None,
+                "negative_periods": sum(1 for r in returns if r < 0),
+                "worst_drawdown": _clean(min(m["max_drawdown"] for m in measured)),
+                "return_spread": _clean(max(returns) - min(returns)) if returns else None,
+            }
+        )
+
+    return {
+        "periods": [
+            {
+                "label": p.label,
+                "start": p.start.strftime("%Y-%m-%d"),
+                "end": p.end.strftime("%Y-%m-%d"),
+                "months": len(panel.between(p.start, p.end)),
+            }
+            for p in periods
+        ],
+        "allocations": rows,
+    }
+
 
 @app.post("/periods/compare")
 def compare_periods_endpoint(request: PeriodsRequest) -> dict[str, Any]:

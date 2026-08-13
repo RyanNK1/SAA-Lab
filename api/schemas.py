@@ -238,6 +238,61 @@ class SweepRequest(MandateRequest):
         return self
 
 
+class NamedAllocation(BaseModel):
+    """One candidate allocation, carried over from a mandate result."""
+
+    label: str
+    weights: dict[str, float]
+
+    @field_validator("weights")
+    @classmethod
+    def _must_sum_to_one(cls, value: dict[str, float]) -> dict[str, float]:
+        if not value:
+            raise ValueError("weights cannot be empty")
+        total = sum(value.values())
+        if abs(total - 1.0) > 1e-6:
+            raise ValueError(f"weights must sum to 1.0, got {total:.6f}")
+        return value
+
+
+class TrackRequest(BaseRequest):
+    """Measure specific allocations across regimes.
+
+    The allocations come from a mandate solve rather than being optimised per
+    period. A period-by-period optimum is a corner solution -- everything in
+    fixed income through a crisis -- which nobody would hold and which
+    therefore says little about what a real candidate would have endured.
+    """
+
+    allocations: list[NamedAllocation] = Field(..., min_length=1, max_length=12)
+    periods: list[str] | None = Field(
+        None, description="Regime labels to include; all of them if omitted"
+    )
+    rolling_years: int | None = Field(None, ge=1, le=20)
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "allocations": [
+                        {
+                            "label": "candidate 1",
+                            "weights": {
+                                "equity": 0.3,
+                                "fixed_income": 0.4,
+                                "private_equity": 0.1,
+                                "commodities": 0.15,
+                                "cash": 0.05,
+                            },
+                        }
+                    ],
+                    "gold_weight": 0.5,
+                }
+            ]
+        }
+    }
+
+
 class PeriodsRequest(BaseRequest):
     """Compare the same question across regimes."""
 

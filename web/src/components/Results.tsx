@@ -63,15 +63,22 @@ export function Infeasible({ result }: { result: MandateResult }) {
 function AllocationTable({
   allocations,
   assets,
+  selected,
+  onToggle,
 }: {
   allocations: Allocation[];
   assets: string[];
+  selected: number[];
+  onToggle: (index: number) => void;
 }) {
   return (
     <div className="-mx-5 overflow-x-auto px-5">
-      <table className="w-full min-w-[52rem] border-collapse text-sm">
+      <table className="w-full min-w-[54rem] border-collapse text-sm">
         <thead>
           <tr className="border-b border-line-strong">
+            <th className="eyebrow w-8 py-2 pr-2 text-left font-medium">
+              <span className="sr-only">track</span>
+            </th>
             {assets.map((asset) => (
               <th
                 key={asset}
@@ -91,8 +98,21 @@ function AllocationTable({
           {allocations.map((allocation, index) => (
             <tr
               key={index}
-              className="border-b border-line last:border-b-0 hover:bg-ground"
+              className={
+                selected.includes(index)
+                  ? "border-b border-line bg-primary-soft/40 last:border-b-0"
+                  : "border-b border-line last:border-b-0 hover:bg-ground"
+              }
             >
+              <td className="py-2 pr-2">
+                <input
+                  type="checkbox"
+                  checked={selected.includes(index)}
+                  onChange={() => onToggle(index)}
+                  aria-label={`Track allocation ${index + 1} across regimes`}
+                  className="h-3.5 w-3.5 accent-[var(--color-primary)]"
+                />
+              </td>
               {assets.map((asset) => (
                 <td key={asset} className="tabular py-2 pr-4 text-right text-muted">
                   {pct(allocation[asset] as number, 0)}
@@ -127,12 +147,16 @@ export function Results({
   rankBy,
   onRankChange,
   rankable,
+  selected,
+  onToggle,
 }: {
   result: MandateResult;
   assets: string[];
   rankBy: string;
   onRankChange: (value: string) => void;
   rankable: string[];
+  selected: number[];
+  onToggle: (index: number) => void;
 }) {
   if (!result.feasible) return <Infeasible result={result} />;
 
@@ -229,12 +253,19 @@ export function Results({
           </div>
         }
       >
-        <AllocationTable allocations={result.allocations ?? []} assets={assets} />
-        <p className="mt-4 text-xs text-muted">
+        <AllocationTable
+          allocations={result.allocations ?? []}
+          assets={assets}
+          selected={selected}
+          onToggle={onToggle}
+        />
+        <p className="mt-4 text-xs leading-relaxed text-muted">
           Showing {result.allocations?.length ?? 0} of{" "}
           {result.n_qualifying.toLocaleString()}. They all meet the mandate —
           which is best depends on what you care about, so change the ranking
-          rather than trusting the first row.
+          rather than trusting the first row. Tick any of them to carry into{" "}
+          <span className="text-ink">Across regimes</span> and see what they
+          endured.
         </p>
       </Panel>
     </div>
