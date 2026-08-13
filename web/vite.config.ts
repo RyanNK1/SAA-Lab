@@ -7,9 +7,13 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: { alias: { "@": path.resolve(__dirname, "./src") } },
   server: {
-    // The API runs separately. Proxying in development means the app calls
-    // same-origin paths in both dev and production, so no environment-specific
-    // base URL has to be threaded through the client.
-    proxy: { "/api": { target: "http://127.0.0.1:8000", changeOrigin: true, rewrite: (p) => p.replace(/^\/api/, "") } },
+    // The API runs separately in development. Forwarding /api untouched -- not
+    // stripping the prefix -- keeps the path identical to production, where a
+    // rewrite sends /api/* to the API service. Stripping it here would mean
+    // the two environments disagree about where the API lives, and the
+    // difference would only surface after deploying.
+    proxy: {
+      "/api": { target: "http://127.0.0.1:8000", changeOrigin: true },
+    },
   },
 });

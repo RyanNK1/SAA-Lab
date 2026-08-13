@@ -40,6 +40,7 @@ def main() -> int:
 
     print(f"dataset: {len(panel)} months, {panel.start:%Y-%m} to {panel.end:%Y-%m}")
     print(f"docs:    http://{args.host}:{args.port}/docs")
+    print(f"api:     http://{args.host}:{args.port}/api/health")
 
     uvicorn.run("api.main:app", host=args.host, port=args.port, reload=args.reload)
     return 0

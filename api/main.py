@@ -81,6 +81,16 @@ GROUPS: dict[str, tuple[str, ...]] = {
     "real_assets": (SLEEVE,),
 }
 
+# Every route lives under /api.
+#
+# The frontend is served from its own origin and forwards /api/* to this
+# service, so the prefix has to be part of the real path rather than something
+# a proxy strips. Stripping it in development and keeping it in production
+# would mean the two environments disagree about where the API is -- working
+# locally and returning 404 once deployed, which is the worst place to find
+# out.
+API_PREFIX = "/api"
+
 app = FastAPI(
     title="SAA Lab",
     description=(
@@ -239,7 +249,7 @@ def _rebalance_spec(request: Any) -> RebalanceSpec:
 # Metadata
 # ---------------------------------------------------------------------------
 
-@app.get("/health")
+@app.get(f"{API_PREFIX}/health")
 def health() -> dict[str, Any]:
     try:
         panel = load_panel()
@@ -248,7 +258,7 @@ def health() -> dict[str, Any]:
     return {"status": "ok", "months": len(panel)}
 
 
-@app.get("/meta")
+@app.get(f"{API_PREFIX}/meta")
 def meta() -> dict[str, Any]:
     """Everything a frontend needs to build its controls."""
     panel = load_panel()
@@ -309,7 +319,7 @@ def meta() -> dict[str, Any]:
     }
 
 
-@app.get("/assets/stats")
+@app.get(f"{API_PREFIX}/assets/stats")
 def asset_stats(start: str | None = None, end: str | None = None,
                 gold_weight: float = 0.5) -> dict[str, Any]:
     """Per-asset return, risk and correlations for a period."""
@@ -338,7 +348,7 @@ def asset_stats(start: str | None = None, end: str | None = None,
     }
 
 
-@app.get("/sleeve/sensitivity")
+@app.get(f"{API_PREFIX}/sleeve/sensitivity")
 def sleeve_slider(start: str | None = None, end: str | None = None,
                   steps: int = 11) -> dict[str, Any]:
     """How the commodities sleeve changes character across the slider."""
@@ -358,7 +368,7 @@ def sleeve_slider(start: str | None = None, end: str | None = None,
 # Measuring and optimising
 # ---------------------------------------------------------------------------
 
-@app.post("/measure")
+@app.post(f"{API_PREFIX}/measure")
 def measure(request: MeasureRequest) -> dict[str, Any]:
     """Statistics for one allocation the caller supplies."""
     panel, cash = prepare(request)
@@ -396,7 +406,7 @@ def measure(request: MeasureRequest) -> dict[str, Any]:
     }
 
 
-@app.post("/optimize")
+@app.post(f"{API_PREFIX}/optimize")
 def optimize_endpoint(request: OptimizeRequest) -> dict[str, Any]:
     """Best allocation on one measure, with the near-optimal range."""
     panel, cash = prepare(request)
@@ -443,7 +453,7 @@ def optimize_endpoint(request: OptimizeRequest) -> dict[str, Any]:
     }
 
 
-@app.post("/frontier")
+@app.post(f"{API_PREFIX}/frontier")
 def frontier_endpoint(request: OptimizeRequest) -> dict[str, Any]:
     """The curve: lowest volatility reachable at each level of return."""
     panel, cash = prepare(request)
@@ -475,7 +485,7 @@ def _mandate_from(request: MandateRequest, assets: list[str]) -> Mandate:
         raise HTTPException(status_code=422, detail=str(error)) from error
 
 
-@app.post("/mandate")
+@app.post(f"{API_PREFIX}/mandate")
 def mandate_endpoint(request: MandateRequest) -> dict[str, Any]:
     """Which allocations met the mandate, or what would have to change."""
     panel, cash = prepare(request)
@@ -540,7 +550,7 @@ def mandate_endpoint(request: MandateRequest) -> dict[str, Any]:
     return payload
 
 
-@app.post("/mandate/sweep")
+@app.post(f"{API_PREFIX}/mandate/sweep")
 def sweep_endpoint(request: SweepRequest) -> dict[str, Any]:
     """Where a return target stops being reachable within the budget."""
     panel, cash = prepare(request)
@@ -582,7 +592,7 @@ def sweep_endpoint(request: SweepRequest) -> dict[str, Any]:
     }
 
 
-@app.post("/mandate/across-periods")
+@app.post(f"{API_PREFIX}/mandate/across-periods")
 def robust_mandate_endpoint(request: RobustMandateRequest) -> dict[str, Any]:
     """Allocations meeting the mandate in every regime, not merely overall.
 
@@ -640,7 +650,7 @@ def robust_mandate_endpoint(request: RobustMandateRequest) -> dict[str, Any]:
 # Periods
 # ---------------------------------------------------------------------------
 
-@app.post("/periods/track")
+@app.post(f"{API_PREFIX}/periods/track")
 def track_endpoint(request: TrackRequest) -> dict[str, Any]:
     """How specific allocations fared in each regime.
 
@@ -744,7 +754,7 @@ def track_endpoint(request: TrackRequest) -> dict[str, Any]:
     }
 
 
-@app.post("/periods/compare")
+@app.post(f"{API_PREFIX}/periods/compare")
 def compare_periods_endpoint(request: PeriodsRequest) -> dict[str, Any]:
     """The same question answered in each regime, and how much the answer moves."""
     panel, _ = prepare(request)

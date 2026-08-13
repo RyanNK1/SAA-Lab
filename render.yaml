@@ -1,0 +1,69 @@
+# Render deployment.
+#
+# Two services from one repository: the Python API, and the built frontend as
+# static files. They are separate because they have nothing in common
+# operationally -- the API needs a Python runtime and holds the dataset in
+# memory; the frontend is a folder of files a CDN can serve.
+#
+# The frontend calls same-origin `/api/...` and a rewrite forwards those to the
+# API service. Doing it that way rather than pointing the browser at the API's
+# own hostname avoids CORS entirely, and means no build-time environment
+# variable has to carry the API URL.
+#
+# Before the first deploy:
+#
+#   1. python scripts/check_env.py   -- and paste its pins into
+#      api/requirements.txt. Pins resolved on a different interpreter from the
+#      one Render runs are the single most reliable way to lose an afternoon.
+#   2. Confirm .python-version matches runtime.pythonVersion below.
+#   3. Confirm data/public/monthly_returns.csv is committed. The API loads it
+#      at startup and will not serve without it.
+
+services:
+  - type: web
+    name: saa-lab-api
+    runtime: python
+    plan: free
+    rootDir: .
+    buildCommand: pip install -r api/requirements.txt
+    # PORT is supplied by Render. Binding to 127.0.0.1 would make the service
+    # unreachable from outside the container, which fails silently as a health
+    # check timeout rather than an error.
+    startCommand: uvicorn api.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.10.12
+      # Without this, uvicorn's output is buffered and the logs stay empty
+      # until the buffer flushes -- so a slow startup looks like a hung one.
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      # The frontend proxies through its own origin, so the API never sees a
+      # cross-origin request in normal use. Left open for direct API calls and
+      # the interactive docs.
+      - key: ALLOWED_ORIGINS
+        value: "*"
+
+  - type: web
+    name: saa-lab-web
+    runtime: static
+    rootDir: web
+    buildCommand: npm ci && npm run build
+    staticPublishPath: ./dist
+    routes:
+      # Forwarded to the API service. Must come before the SPA fallback, or
+      # every API call would be answered with index.html -- which returns 200
+      # and fails as a JSON parse error, hiding the actual cause.
+      - type: rewrite
+        source: /api/*
+        destination: https://saa-lab-api.onrender.com/api/*
+      # Single-page app: any other path returns the shell.
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    headers:
+      - path: /assets/*
+        name: Cache-Control
+        # Vite fingerprints these filenames, so a changed file gets a new name
+        # and a stale cache is impossible.
+        value: public, max-age=31536000, immutable

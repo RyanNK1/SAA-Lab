@@ -2,8 +2,8 @@
 #     python scripts/check_env.py
 # and paste the pins it prints. Pins resolved against one Python version and
 # deployed onto another is a known way to lose an afternoon.
-numpy
-pandas
-scipy
-yfinance
-pytest
+  numpy==2.2.6
+  pandas==2.3.3
+  scipy==1.15.3
+  yfinance==1.5.2
+  pytest==9.1.1
