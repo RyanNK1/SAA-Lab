@@ -1,12 +1,14 @@
-# Regenerate from a clean venv before deploying:
-#     python scripts/check_env.py
-# Pins below are from the authoring sandbox and are NOT verified on the
-# deployment interpreter.
+# Pins resolved on Python 3.10.12 via `python scripts/check_env.py` --
+# the same interpreter Render runs. Pins from a different version can lack a
+# prebuilt wheel on the host, and the fallback is a source build that needs a
+# compiler.
 #
-# On Render set: PYTHON_VERSION to match .python-version, PYTHONUNBUFFERED=1
-# Start command:  uvicorn api.main:app --host 0.0.0.0 --port $PORT
-numpy
-pandas
-scipy
-fastapi
-uvicorn[standard]
+# Regenerate whenever a dependency changes, or after upgrading Python.
+#
+# On Render: PYTHON_VERSION=3.10.12, PYTHONUNBUFFERED=1
+# Start:     uvicorn api.main:app --host 0.0.0.0 --port $PORT
+numpy==2.2.6
+pandas==2.3.3
+scipy==1.15.3
+fastapi==0.141.1
+uvicorn[standard]==0.52.1
