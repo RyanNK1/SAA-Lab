@@ -19,7 +19,7 @@
 import { useState } from "react";
 import type { TrackResult, TrackedAllocation } from "@/lib/api";
 import { assetLabel, num, pct } from "@/lib/format";
-import { Panel, Select } from "@/components/ui/primitives";
+import { Explainer, Panel, Select } from "@/components/ui/primitives";
 
 type Measure = "realised_return" | "max_drawdown" | "sharpe" | "volatility";
 
@@ -74,7 +74,7 @@ export function RegimeStress({
   result: TrackResult;
   selectedPeriods: string[];
   onPeriodsChange: (next: string[]) => void;
-  allPeriods: { label: string; start: string; end: string }[];
+  allPeriods: { label: string; start: string; end: string; note: string }[];
 }) {
   const [measure, setMeasure] = useState<Measure>("realised_return");
   const active = MEASURES.find((m) => m.key === measure)!;
@@ -96,20 +96,26 @@ export function RegimeStress({
           {allPeriods.map((period) => {
             const on = selectedPeriods.includes(period.label);
             return (
-              <button
-                key={period.label}
-                type="button"
-                onClick={() => togglePeriod(period.label)}
-                aria-pressed={on}
-                title={`${period.start} to ${period.end}`}
-                className={
-                  on
-                    ? "border border-primary bg-primary-soft px-2.5 py-1 text-xs text-primary"
-                    : "border border-line px-2.5 py-1 text-xs text-muted hover:border-line-strong"
-                }
-              >
-                {period.label}
-              </button>
+              <span key={period.label} className="inline-flex items-center">
+                <button
+                  type="button"
+                  onClick={() => togglePeriod(period.label)}
+                  aria-pressed={on}
+                  className={
+                    on
+                      ? "border border-primary bg-primary-soft px-2.5 py-1 text-xs text-primary"
+                      : "border border-line px-2.5 py-1 text-xs text-muted hover:border-line-strong"
+                  }
+                >
+                  {period.label}
+                </button>
+                <Explainer title={period.label}>
+                  <span className="tabular mb-1.5 block text-[0.6875rem] text-ink">
+                    {period.start} to {period.end}
+                  </span>
+                  {period.note}
+                </Explainer>
+              </span>
             );
           })}
         </div>

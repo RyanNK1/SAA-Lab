@@ -11,7 +11,15 @@
 
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { api, type MandateBody, type TrackBody } from "@/lib/api";
+import { api, type Allocation, type MandateBody, type TrackBody } from "@/lib/api";
+import {
+  contains,
+  identify,
+  labelFor,
+  toSaved,
+  toggle,
+  type Saved,
+} from "@/lib/basket";
 import { dateLabel } from "@/lib/format";
 import { INITIAL, MandateForm, asFraction, type FormState } from "@/components/MandateForm";
 import { Results } from "@/components/Results";
@@ -85,9 +93,10 @@ export default function App() {
   const [form, setForm] = useState<FormState>(INITIAL);
   const [rankBy, setRankBy] = useState("max_drawdown");
   const [view, setView] = useState<View>("mandate");
-  // Which qualifying allocations to carry into the regime view. Empty means
-  // the top few, so the second view is never blank on arrival.
-  const [tracked, setTracked] = useState<number[]>([]);
+  // Allocations kept aside to compare. Held by their weights, not by row
+  // position: reordering the table or solving a different mandate would
+  // otherwise leave the ticks pointing at whatever now occupies that row.
+  const [basket, setBasket] = useState<Saved[]>([]);
   const [regimes, setRegimes] = useState<string[]>([]);
 
   const meta = useQuery({ queryKey: ["meta"], queryFn: api.meta });
@@ -113,31 +122,40 @@ export default function App() {
     if (solve.data?.feasible) run(value);
   };
 
-  /** Carry the chosen allocations into the regime view.
+  const isSaved = (allocation: Allocation) =>
+    contains(basket, identify(
+      Object.fromEntries(inPlay.map((a) => [a, (allocation[a] as number) ?? 0])),
+      inPlay,
+    ));
+
+  const toggleSaved = (allocation: Allocation, index: number) =>
+    setBasket((current) =>
+      toggle(current, toSaved(allocation, inPlay, labelFor(rankBy, index))),
+    );
+
+  /** Measure the kept allocations through each regime.
    *
    * These are candidates that met a mandate, not per-period optima. A
    * period-by-period optimum is a corner solution nobody would hold, so what
    * it endured is not informative; what a real candidate endured is.
    */
   const runTracking = (
-    indices: number[] = tracked,
+    saved: Saved[] = basket,
     periods: string[] = regimes,
   ) => {
-    if (!meta.data || !solve.data?.allocations) return;
+    if (!meta.data) return;
 
-    const rows = solve.data.allocations;
-    // Default to the first few rather than requiring a selection first: an
-    // empty second view would make the user guess what it is for.
-    const chosen = indices.length > 0 ? indices : rows.slice(0, 5).map((_, i) => i);
-
-    const allocations = chosen
-      .filter((i) => rows[i])
-      .map((i) => ({
-        label: `#${i + 1}`,
-        weights: Object.fromEntries(
-          inPlay.map((asset) => [asset, (rows[i][asset] as number) ?? 0]),
-        ),
-      }));
+    // Nothing kept yet: fall back to the top few from the current solve, so
+    // the view is never blank on arrival.
+    const allocations =
+      saved.length > 0
+        ? saved.map((entry) => ({ label: entry.label, weights: entry.weights }))
+        : (solve.data?.allocations ?? []).slice(0, 5).map((row, i) => ({
+            label: labelFor(rankBy, i),
+            weights: Object.fromEntries(
+              inPlay.map((asset) => [asset, (row[asset] as number) ?? 0]),
+            ),
+          }));
 
     if (allocations.length === 0) return;
 
@@ -152,21 +170,16 @@ export default function App() {
     });
   };
 
-  const toggleTracked = (index: number) =>
-    setTracked((current) =>
-      current.includes(index)
-        ? current.filter((i) => i !== index)
-        : [...current, index],
-    );
-
   const changeRegimes = (next: string[]) => {
     setRegimes(next);
-    runTracking(tracked, next);
+    runTracking(basket, next);
   };
 
   const switchTo = (next: View) => {
     setView(next);
-    if (next === "periods" && solve.data?.feasible) runTracking();
+    if (next === "periods" && (basket.length > 0 || solve.data?.feasible)) {
+      runTracking();
+    }
   };
 
   return (
@@ -300,8 +313,9 @@ export default function App() {
                   rankBy={rankBy}
                   onRankChange={changeRank}
                   rankable={meta.data.rankable}
-                  selected={tracked}
-                  onToggle={toggleTracked}
+                  isSaved={isSaved}
+                  onToggle={toggleSaved}
+                  savedCount={basket.length}
                 />
               )}
             </div>
@@ -320,13 +334,15 @@ export default function App() {
                 type="button"
                 variant="quiet"
                 onClick={() => runTracking()}
-                disabled={track.isPending || !solve.data?.feasible}
+                disabled={
+                  track.isPending || (basket.length === 0 && !solve.data?.feasible)
+                }
               >
                 {track.isPending ? "Measuring…" : "Run again"}
               </Button>
             </div>
 
-            {!solve.data?.feasible && (
+            {basket.length === 0 && !solve.data?.feasible && (
               <Panel title="nothing to track yet">
                 <p className="max-w-lg text-[0.9375rem] leading-relaxed text-ink">
                   Solve a mandate first. This view takes the allocations that
@@ -344,7 +360,7 @@ export default function App() {
 
             {track.isPending && (
               <Solving
-                samples={(tracked.length || 5) * 7}
+                samples={(basket.length || 5) * 7}
                 schedule={form.rebalance}
               />
             )}
@@ -355,6 +371,34 @@ export default function App() {
                   {(track.error as Error).message}
                 </p>
               </Panel>
+            )}
+
+            {basket.length > 0 && (
+              <div className="mb-5 flex flex-wrap items-center gap-2 border border-line bg-surface px-4 py-3">
+                <span className="eyebrow mr-1">kept</span>
+                {basket.map((entry) => (
+                  <button
+                    key={entry.id}
+                    type="button"
+                    onClick={() => {
+                      const next = basket.filter((s) => s.id !== entry.id);
+                      setBasket(next);
+                      runTracking(next, regimes);
+                    }}
+                    title="Remove from the comparison"
+                    className="border border-primary bg-primary-soft px-2 py-0.5 text-xs text-primary hover:border-brick hover:bg-brick-soft hover:text-brick"
+                  >
+                    {entry.label} &times;
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => setBasket([])}
+                  className="ml-auto text-xs text-muted underline underline-offset-2 hover:text-ink"
+                >
+                  clear
+                </button>
+              </div>
             )}
 
             {track.data && !track.isPending && (

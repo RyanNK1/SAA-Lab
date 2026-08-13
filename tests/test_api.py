@@ -647,3 +647,22 @@ def test_several_allocations_are_tracked_together(client):
     ).json()
 
     assert [a["label"] for a in body["allocations"]] == ["balanced", "defensive"]
+
+
+def test_every_regime_explains_what_it_was(client):
+    """A label alone assumes the reader knows the period. Anyone who does not
+    is left guessing why the answer changed between one window and the next."""
+    body = client.get("/meta").json()
+
+    assert body["regimes"]
+    for regime in body["regimes"]:
+        assert regime["note"].strip(), f"{regime['label']} has no explanation"
+        assert len(regime["note"]) > 30
+
+
+def test_tracked_periods_carry_their_explanation(client):
+    body = client.post(
+        "/periods/track", json={"allocations": [_candidate()], **FAST}
+    ).json()
+    for period in body["periods"]:
+        assert period["note"].strip()

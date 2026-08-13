@@ -63,13 +63,13 @@ export function Infeasible({ result }: { result: MandateResult }) {
 function AllocationTable({
   allocations,
   assets,
-  selected,
+  isSaved,
   onToggle,
 }: {
   allocations: Allocation[];
   assets: string[];
-  selected: number[];
-  onToggle: (index: number) => void;
+  isSaved: (allocation: Allocation) => boolean;
+  onToggle: (allocation: Allocation, index: number) => void;
 }) {
   return (
     <div className="-mx-5 overflow-x-auto px-5">
@@ -99,7 +99,7 @@ function AllocationTable({
             <tr
               key={index}
               className={
-                selected.includes(index)
+                isSaved(allocation)
                   ? "border-b border-line bg-primary-soft/40 last:border-b-0"
                   : "border-b border-line last:border-b-0 hover:bg-ground"
               }
@@ -107,9 +107,9 @@ function AllocationTable({
               <td className="py-2 pr-2">
                 <input
                   type="checkbox"
-                  checked={selected.includes(index)}
-                  onChange={() => onToggle(index)}
-                  aria-label={`Track allocation ${index + 1} across regimes`}
+                  checked={isSaved(allocation)}
+                  onChange={() => onToggle(allocation, index)}
+                  aria-label={`Keep allocation ${index + 1} to compare across regimes`}
                   className="h-3.5 w-3.5 accent-[var(--color-primary)]"
                 />
               </td>
@@ -147,16 +147,18 @@ export function Results({
   rankBy,
   onRankChange,
   rankable,
-  selected,
+  isSaved,
   onToggle,
+  savedCount,
 }: {
   result: MandateResult;
   assets: string[];
   rankBy: string;
   onRankChange: (value: string) => void;
   rankable: string[];
-  selected: number[];
-  onToggle: (index: number) => void;
+  isSaved: (allocation: Allocation) => boolean;
+  onToggle: (allocation: Allocation, index: number) => void;
+  savedCount: number;
 }) {
   if (!result.feasible) return <Infeasible result={result} />;
 
@@ -256,7 +258,7 @@ export function Results({
         <AllocationTable
           allocations={result.allocations ?? []}
           assets={assets}
-          selected={selected}
+          isSaved={isSaved}
           onToggle={onToggle}
         />
         <p className="mt-4 text-xs leading-relaxed text-muted">
@@ -266,6 +268,17 @@ export function Results({
           rather than trusting the first row. Tick any of them to carry into{" "}
           <span className="text-ink">Across regimes</span> and see what they
           endured.
+          {savedCount > 0 && (
+            <>
+              {" "}
+              <span className="text-ink">
+                {savedCount} kept so far
+              </span>{" "}
+              — they stay as you change the ranking or solve a different
+              mandate, so selections from several runs can be compared side by
+              side.
+            </>
+          )}
         </p>
       </Panel>
     </div>

@@ -74,7 +74,7 @@ export interface Meta {
   rebalance_schedules: string[];
   rankable: string[];
   groups: Record<string, string[]>;
-  regimes: { label: string; start: string; end: string }[];
+  regimes: { label: string; start: string; end: string; note: string }[];
   disclaimer: string;
 }
 
@@ -236,7 +236,13 @@ export interface TrackedAllocation {
 }
 
 export interface TrackResult {
-  periods: { label: string; start: string; end: string; months: number }[];
+  periods: {
+    label: string;
+    start: string;
+    end: string;
+    months: number;
+    note: string;
+  }[];
   allocations: TrackedAllocation[];
 }
 

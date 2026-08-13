@@ -50,6 +50,41 @@ NAMED_REGIMES: tuple[tuple[str, str, str], ...] = (
 )
 
 
+# What each window was, in a sentence. A label alone assumes the reader knows
+# the period; anyone who does not is left guessing why the answer changed.
+REGIME_NOTES: dict[str, str] = {
+    "Run-up": (
+        "The last stretch of the pre-crisis expansion. Credit was cheap, "
+        "equities were making highs, and almost nothing looked risky."
+    ),
+    "Crisis": (
+        "Peak to trough of the financial crisis. Equities roughly halved, "
+        "credit froze, and correlations across risk assets went to one -- "
+        "diversification failed at the moment it was needed."
+    ),
+    "Recovery": (
+        "The rebound out of the trough. Central banks cut to zero and bought "
+        "assets outright; almost everything rose together."
+    ),
+    "Zero-rate decade": (
+        "Rates near zero, inflation persistently below target. Bonds "
+        "diversified equities reliably and cash paid nothing, which is the "
+        "environment most modern allocation intuition was formed in."
+    ),
+    "Pandemic": (
+        "A violent, very short drawdown followed by the fastest recovery on "
+        "record. A test of how a portfolio behaves when the fall and the "
+        "rebound are both measured in weeks."
+    ),
+    "Inflation shock": (
+        "Rates rose sharply and inflation ran well above target. Bonds and "
+        "equities fell together, so the classic hedge stopped working -- the "
+        "single hardest regime here for a conventional allocation."
+    ),
+    "Recent": "The most recent stretch, after rates settled at higher levels.",
+}
+
+
 @dataclass(frozen=True)
 class Period:
     """One named window."""
@@ -57,6 +92,7 @@ class Period:
     label: str
     start: pd.Timestamp
     end: pd.Timestamp
+    note: str = ""
 
     @property
     def years(self) -> float:
@@ -88,7 +124,9 @@ def resolve_periods(
         if count < min_observations:
             continue
 
-        resolved.append(Period(label, window_start, window_end))
+        resolved.append(
+            Period(label, window_start, window_end, REGIME_NOTES.get(label, ""))
+        )
     return resolved
 
 

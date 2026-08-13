@@ -294,8 +294,12 @@ def meta() -> dict[str, Any]:
         "rankable": sorted(RANKABLE),
         "groups": {name: list(members) for name, members in GROUPS.items()},
         "regimes": [
-            {"label": p.label, "start": p.start.strftime("%Y-%m-%d"),
-             "end": p.end.strftime("%Y-%m-%d")}
+            {
+                "label": p.label,
+                "start": p.start.strftime("%Y-%m-%d"),
+                "end": p.end.strftime("%Y-%m-%d"),
+                "note": p.note,
+            }
             for p in resolve_periods(build_sleeve(panel, 0.5))
         ],
         "disclaimer": (
@@ -732,6 +736,7 @@ def track_endpoint(request: TrackRequest) -> dict[str, Any]:
                 "start": p.start.strftime("%Y-%m-%d"),
                 "end": p.end.strftime("%Y-%m-%d"),
                 "months": len(panel.between(p.start, p.end)),
+                "note": p.note,
             }
             for p in periods
         ],
