@@ -684,3 +684,90 @@ def test_an_unprefixed_path_is_not_served(client):
     """Deliberately without the prefix: /health must not answer, or the
     prefix would be decorative and a misconfigured proxy would go unnoticed."""
     assert client.get("/health").status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# What the policy limits cost
+# ---------------------------------------------------------------------------
+
+_LIMITS = {
+    "caps": {"private_equity": 0.20},
+    "floors": {"cash": 0.05},
+    "group_caps": {"growth": 0.60},
+}
+
+
+def test_constraint_cost_is_never_negative(client):
+    """A rule shrinks the set of allowed allocations, and a smaller set cannot
+    contain a better answer. A negative cost would mean the optimiser failed,
+    not that the rule helped."""
+    body = client.post(
+        "/api/constraints/cost",
+        json={"objective": "max_sharpe", "constraints": _LIMITS, **FAST},
+    ).json()
+
+    assert body["return_cost_bps"] >= -1e-6
+    assert body["objective_cost"] >= -1e-6
+
+
+def test_each_rule_is_costed_separately(client):
+    """A policy statement usually has several limits and typically only one
+    binds. Knowing which turns an argument about all of them into an argument
+    about one."""
+    body = client.post(
+        "/api/constraints/cost",
+        json={"objective": "max_sharpe", "constraints": _LIMITS, **FAST},
+    ).json()
+
+    rules = body["per_rule"]
+    assert len(rules) == 3
+    assert {r["kind"] for r in rules} == {"cap", "floor", "group"}
+    for rule in rules:
+        assert "cost_bps" in rule
+        assert rule["constraint"].strip()
+
+
+def test_per_rule_can_be_skipped(client):
+    """It costs an extra solve per rule, so a caller that only wants the total
+    should not pay for the breakdown."""
+    body = client.post(
+        "/api/constraints/cost",
+        json={"constraints": _LIMITS, "per_rule": False, **FAST},
+    ).json()
+    assert "per_rule" not in body
+
+
+def test_costing_nothing_is_rejected(client):
+    """With no limits there is nothing to cost, and returning a zero would
+    imply a calculation happened."""
+    response = client.post(
+        "/api/constraints/cost", json={"constraints": {}, **FAST}
+    )
+    assert response.status_code == 422
+    assert "nothing to cost" in str(response.json())
+
+
+def test_both_allocations_are_returned_for_comparison(client):
+    """The weights matter as much as the number: a user wants to see what the
+    rule actually changed, not only what it cost."""
+    body = client.post(
+        "/api/constraints/cost",
+        json={"constraints": _LIMITS, "per_rule": False, **FAST},
+    ).json()
+
+    assert set(body["unconstrained"]["weights"]) == set(
+        body["constrained"]["weights"]
+    )
+    assert sum(body["constrained"]["weights"].values()) == pytest.approx(1.0, abs=1e-6)
+
+
+def test_the_constrained_answer_obeys_the_limits(client):
+    body = client.post(
+        "/api/constraints/cost",
+        json={"constraints": _LIMITS, "per_rule": False, **FAST},
+    ).json()
+    weights = body["constrained"]["weights"]
+
+    assert weights["private_equity"] <= 0.20 + 1e-6
+    assert weights["cash"] >= 0.05 - 1e-6
+    assert weights["equity"] + weights["private_equity"] <= 0.60 + 1e-6

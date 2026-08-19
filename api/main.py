@@ -30,6 +30,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from api.schemas import (
+    ConstraintCostRequest,
     ConstraintSpec,
     TrackRequest,
     MandateRequest,
@@ -47,7 +48,13 @@ from core.config import (
     allocatable_universe,
     asset,
 )
-from core.constraints import Constraints, GroupLimit, optimize_constrained
+from core.constraints import (
+    Constraints,
+    GroupLimit,
+    cost_of_constraints,
+    cost_per_constraint,
+    optimize_constrained,
+)
 from core.mandate import (
     RANKABLE,
     Mandate,
@@ -649,6 +656,82 @@ def robust_mandate_endpoint(request: RobustMandateRequest) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 # Periods
 # ---------------------------------------------------------------------------
+
+@app.post(f"{API_PREFIX}/constraints/cost")
+def constraint_cost_endpoint(request: ConstraintCostRequest) -> dict[str, Any]:
+    """What the policy limits cost, against solving without them.
+
+    Every rule costs return, and almost nobody measures how much. Reporting it
+    turns the tool from "here is the answer" into "here is what your rules are
+    costing you", which is the question a committee actually has.
+
+    The cost is always non-negative: a constraint shrinks the set of allowed
+    allocations, and a smaller set cannot contain a better answer. A negative
+    figure would mean the optimiser failed, not that the rule helped.
+    """
+    panel, cash = prepare(request)
+    constraints = build_constraints(request.constraints, panel.assets)
+
+    if constraints.is_empty:
+        raise HTTPException(
+            status_code=422,
+            detail="No constraints were supplied, so there is nothing to cost.",
+        )
+
+    try:
+        result = cost_of_constraints(
+            panel,
+            request.objective,
+            constraints,
+            risk_free=cash,
+            n_samples=request.samples,
+        )
+    except (RuntimeError, ValueError) as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+
+    payload: dict[str, Any] = {
+        "objective": request.objective.value,
+        "constraints": constraints.describe(),
+        "summary": result.describe(),
+        "return_cost_bps": _clean(result.return_cost * 10_000),
+        "objective_cost": _clean(result.cost),
+        "unconstrained": {
+            "weights": _series_to_dict(result.unconstrained.weights),
+            "stats": {
+                k: _clean(v) for k, v in result.unconstrained.stats.to_dict().items()
+            },
+        },
+        "constrained": {
+            "weights": _series_to_dict(result.constrained.weights),
+            "stats": {
+                k: _clean(v) for k, v in result.constrained.stats.to_dict().items()
+            },
+        },
+        "binding": _clean(abs(result.return_cost) > 1e-6),
+    }
+
+    if request.per_rule:
+        try:
+            table = cost_per_constraint(
+                panel,
+                request.objective,
+                constraints,
+                risk_free=cash,
+                n_samples=request.samples,
+            )
+        except (RuntimeError, ValueError) as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+
+        payload["per_rule"] = _frame_to_records(table)
+        payload["per_rule_note"] = (
+            "Each row removes one rule and re-solves, so the figure is that "
+            "rule's marginal cost given the others. They do not sum to the "
+            "total: rules interact, and two can be individually cheap and "
+            "jointly expensive."
+        )
+
+    return payload
+
 
 @app.post(f"{API_PREFIX}/periods/track")
 def track_endpoint(request: TrackRequest) -> dict[str, Any]:

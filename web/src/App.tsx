@@ -11,7 +11,13 @@
 
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { api, type Allocation, type MandateBody, type TrackBody } from "@/lib/api";
+import {
+  api,
+  type Allocation,
+  type CostBody,
+  type MandateBody,
+  type TrackBody,
+} from "@/lib/api";
 import {
   contains,
   identify,
@@ -24,6 +30,7 @@ import { dateLabel } from "@/lib/format";
 import { INITIAL, MandateForm, asFraction, type FormState } from "@/components/MandateForm";
 import { Results } from "@/components/Results";
 import { RegimeStress } from "@/components/RegimeStress";
+import { ConstraintCost } from "@/components/ConstraintCost";
 import { Solving } from "@/components/Solving";
 import { Button, Panel } from "@/components/ui/primitives";
 
@@ -87,7 +94,7 @@ function buildRequest(state: FormState, rankBy: string, allAssets: string[]): Ma
   };
 }
 
-type View = "mandate" | "periods";
+type View = "mandate" | "periods" | "cost";
 
 export default function App() {
   const [form, setForm] = useState<FormState>(INITIAL);
@@ -103,6 +110,10 @@ export default function App() {
 
   const solve = useMutation({
     mutationFn: (body: MandateBody) => api.mandate(body),
+  });
+
+  const cost = useMutation({
+    mutationFn: (body: CostBody) => api.constraintCost(body),
   });
 
   const track = useMutation({
@@ -175,11 +186,48 @@ export default function App() {
     runTracking(basket, next);
   };
 
+  /** What the policy limits cost, using the same limits the mandate uses.
+   *
+   * Slower than a single solve: it optimises with the rules and without them,
+   * then once more per rule to isolate each. The sample budget is lower for
+   * that reason -- the figure it produces is a difference between two solves,
+   * and a difference is less sensitive to search depth than either solve is.
+   */
+  const runCost = () => {
+    if (!meta.data) return;
+    const request = buildRequest(form, rankBy, allocatable);
+
+    if (
+      Object.keys(request.constraints.caps ?? {}).length === 0 &&
+      Object.keys(request.constraints.floors ?? {}).length === 0 &&
+      Object.keys(request.constraints.group_caps ?? {}).length === 0
+    ) {
+      return;
+    }
+
+    cost.mutate({
+      gold_weight: request.gold_weight,
+      assets: request.assets,
+      rebalance: request.rebalance,
+      cost_bps: request.cost_bps,
+      samples: form.rebalance === "monthly" ? 3000 : 600,
+      objective: "max_sharpe",
+      constraints: request.constraints,
+      per_rule: true,
+    });
+  };
+
+  const hasLimits =
+    Object.values(form.limits).some(
+      (limit) => limit.floor.trim() !== "" || limit.cap.trim() !== "",
+    ) || form.growthCap.trim() !== "";
+
   const switchTo = (next: View) => {
     setView(next);
     if (next === "periods" && (basket.length > 0 || solve.data?.feasible)) {
       runTracking();
     }
+    if (next === "cost" && cost.isIdle && hasLimits) runCost();
   };
 
   return (
@@ -223,6 +271,7 @@ export default function App() {
                 [
                   ["mandate", "One mandate"],
                   ["periods", "Across regimes"],
+                  ["cost", "Cost of the rules"],
                 ] as [View, string][]
               ).map(([key, label]) => (
                 <button
@@ -413,6 +462,57 @@ export default function App() {
                 allPeriods={meta.data.regimes}
               />
             )}
+          </div>
+        )}
+
+        {meta.data && view === "cost" && (
+          <div>
+            <div className="mb-5 flex flex-wrap items-baseline justify-between gap-4">
+              <p className="max-w-2xl text-[0.9375rem] leading-relaxed text-muted">
+                The policy limits from the mandate, solved with and without
+                them. Every rule costs return; almost nobody measures how much,
+                and usually only one of them is doing it.
+              </p>
+              <Button
+                type="button"
+                variant="quiet"
+                onClick={runCost}
+                disabled={cost.isPending || !hasLimits}
+              >
+                {cost.isPending ? "Costing…" : "Run again"}
+              </Button>
+            </div>
+
+            {!hasLimits && (
+              <Panel title="no limits to cost">
+                <p className="max-w-lg text-[0.9375rem] leading-relaxed text-ink">
+                  Set a floor or a ceiling on the mandate tab first — a minimum
+                  cash holding, a cap on private equity, a limit on growth
+                  assets.
+                </p>
+                <p className="mt-3 max-w-lg text-sm leading-relaxed text-muted">
+                  This view then solves the allocation twice, once obeying those
+                  rules and once ignoring them, and reports the difference.
+                </p>
+              </Panel>
+            )}
+
+            {cost.isPending && (
+              <Solving
+                samples={(form.rebalance === "monthly" ? 3000 : 600) * 4}
+                schedule={form.rebalance}
+              />
+            )}
+
+            {cost.isError && (
+              <Panel title="the request was rejected">
+                <p className="text-sm leading-relaxed text-brick">
+                  {(cost.error as Error).message}
+                </p>
+              </Panel>
+            )}
+
+            {cost.data && !cost.isPending && <ConstraintCost result={cost.data} />}
           </div>
         )}
 

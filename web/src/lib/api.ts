@@ -246,6 +246,40 @@ export interface TrackResult {
   allocations: TrackedAllocation[];
 }
 
+export interface CostBody {
+  gold_weight: number;
+  assets?: string[];
+  rebalance: string;
+  cost_bps: number;
+  samples: number;
+  objective: string;
+  constraints: ConstraintSpec;
+  per_rule: boolean;
+}
+
+export interface RuleCost {
+  kind: string;
+  constraint: string;
+  objective_without: number;
+  objective_with: number;
+  return_without: number;
+  return_with: number;
+  cost_bps: number;
+}
+
+export interface CostResult {
+  objective: string;
+  constraints: string;
+  summary: string;
+  return_cost_bps: number;
+  objective_cost: number;
+  unconstrained: { weights: Record<string, number>; stats: Record<string, number> };
+  constrained: { weights: Record<string, number>; stats: Record<string, number> };
+  binding: boolean;
+  per_rule?: RuleCost[];
+  per_rule_note?: string;
+}
+
 export const api = {
   meta: () => request<Meta>("/meta"),
   mandate: (body: MandateBody, signal?: AbortSignal) =>
@@ -254,4 +288,6 @@ export const api = {
     request<PeriodsResult>("/periods/compare", body, signal),
   track: (body: TrackBody, signal?: AbortSignal) =>
     request<TrackResult>("/periods/track", body, signal),
+  constraintCost: (body: CostBody, signal?: AbortSignal) =>
+    request<CostResult>("/constraints/cost", body, signal),
 };

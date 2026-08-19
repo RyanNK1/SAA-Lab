@@ -293,6 +293,41 @@ class TrackRequest(BaseRequest):
     }
 
 
+class ConstraintCostRequest(BaseRequest):
+    """What each policy limit cost over the period.
+
+    Solved twice per rule -- once with it, once without -- so this is
+    materially slower than a single optimisation. The sample budget defaults
+    lower for that reason.
+    """
+
+    objective: Objective = Objective.MAX_SHARPE
+    constraints: ConstraintSpec = Field(default_factory=ConstraintSpec)
+    per_rule: bool = Field(
+        True,
+        description=(
+            "Also isolate each rule. Costs one extra solve per rule, and the "
+            "isolated figures do not sum to the total: constraints interact."
+        ),
+    )
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "objective": "max_sharpe",
+                    "samples": 3000,
+                    "constraints": {
+                        "caps": {"private_equity": 0.20},
+                        "floors": {"cash": 0.05},
+                        "group_caps": {"growth": 0.60},
+                    },
+                }
+            ]
+        }
+    }
+
+
 class PeriodsRequest(BaseRequest):
     """Compare the same question across regimes."""
 
