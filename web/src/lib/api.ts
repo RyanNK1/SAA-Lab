@@ -100,6 +100,7 @@ export interface MandateBody {
   constraints: ConstraintSpec;
   rank_by: string;
   limit: number;
+  resolution: number | null;
 }
 
 export type Allocation = Record<string, number | null> & {
@@ -145,6 +146,8 @@ export interface MandateResult {
   ranked_by?: string;
   allocations?: Allocation[];
   envelope?: EnvelopeRow[];
+  resolution?: number | null;
+  n_distinct?: number;
   sleeve_split?: SleeveSplit;
 }
 

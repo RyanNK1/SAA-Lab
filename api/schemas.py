@@ -164,6 +164,17 @@ class MandateRequest(BaseRequest):
     constraints: ConstraintSpec = Field(default_factory=ConstraintSpec)
     rank_by: str = "max_drawdown"
     limit: int = Field(20, ge=1, le=500)
+    resolution: float | None = Field(
+        0.05,
+        gt=0.0,
+        le=0.5,
+        description=(
+            "Collapse allocations that are the same portfolio to anyone "
+            "deciding. 0.05 groups to the nearest five percentage points, "
+            "0.01 to the nearest one. Null shows every qualifying allocation, "
+            "including neighbours differing in the third decimal."
+        ),
+    )
 
     model_config = {
         "json_schema_extra": {

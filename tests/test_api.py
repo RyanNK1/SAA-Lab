@@ -771,3 +771,70 @@ def test_the_constrained_answer_obeys_the_limits(client):
     assert weights["private_equity"] <= 0.20 + 1e-6
     assert weights["cash"] >= 0.05 - 1e-6
     assert weights["equity"] + weights["private_equity"] <= 0.60 + 1e-6
+
+
+# ---------------------------------------------------------------------------
+# Distinct allocations
+# ---------------------------------------------------------------------------
+
+def test_resolution_collapses_allocations_a_manager_would_call_identical(client):
+    """40.2% equity and 40.3% equity are not two options. Listing both offers
+    a choice that does not exist, and fills a table of twelve rows with what
+    is, to anyone deciding, one portfolio."""
+    base = {
+        "target_return": 0.05,
+        "max_volatility": 0.14,
+        "limit": 12,
+        **FAST,
+    }
+
+    raw = client.post("/api/mandate", json={**base, "resolution": None}).json()
+    coarse = client.post("/api/mandate", json={**base, "resolution": 0.05}).json()
+
+    if not raw["feasible"]:
+        pytest.skip("mandate not reachable on this dataset")
+
+    assert coarse["n_distinct"] <= raw["n_distinct"]
+    assert coarse["n_qualifying"] == raw["n_qualifying"], (
+        "grouping decides which rows are the same, not which qualify"
+    )
+
+
+def test_a_finer_resolution_keeps_more(client):
+    base = {"target_return": 0.05, "max_volatility": 0.14, **FAST}
+
+    fine = client.post("/api/mandate", json={**base, "resolution": 0.01}).json()
+    coarse = client.post("/api/mandate", json={**base, "resolution": 0.05}).json()
+
+    if not fine["feasible"]:
+        pytest.skip("mandate not reachable on this dataset")
+
+    assert fine["n_distinct"] >= coarse["n_distinct"]
+
+
+def test_rounding_does_not_distort_the_figures_reported(client):
+    """Grouping picks a representative, it does not average. Every figure
+    shown must belong to a real allocation."""
+    body = client.post(
+        "/api/mandate",
+        json={"target_return": 0.05, "max_volatility": 0.14, "resolution": 0.05, **FAST},
+    ).json()
+
+    if not body["feasible"]:
+        pytest.skip("mandate not reachable on this dataset")
+
+    for allocation in body["allocations"]:
+        total = sum(
+            allocation[asset]
+            for asset in ("equity", "fixed_income", "private_equity", "commodities", "cash")
+        )
+        assert total == pytest.approx(1.0, abs=1e-6)
+        assert allocation["realised_return"] >= 0.05 - 1e-9
+
+
+def test_an_impossible_resolution_is_rejected(client):
+    response = client.post(
+        "/api/mandate",
+        json={"target_return": 0.05, "resolution": 0.9, **FAST},
+    )
+    assert response.status_code == 422

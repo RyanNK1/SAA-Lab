@@ -147,6 +147,8 @@ export function Results({
   rankBy,
   onRankChange,
   rankable,
+  resolution,
+  onResolutionChange,
   isSaved,
   onToggle,
   savedCount,
@@ -156,6 +158,8 @@ export function Results({
   rankBy: string;
   onRankChange: (value: string) => void;
   rankable: string[];
+  resolution: number | null;
+  onResolutionChange: (value: number | null) => void;
   isSaved: (allocation: Allocation) => boolean;
   onToggle: (allocation: Allocation, index: number) => void;
   savedCount: number;
@@ -239,19 +243,37 @@ export function Results({
       <Panel
         title="qualifying allocations"
         aside={
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-muted">ranked by</span>
-            <Select
-              value={rankBy}
-              onChange={(e) => onRankChange(e.target.value)}
-              className="w-auto py-1 text-xs"
-            >
-              {rankable.map((measure) => (
-                <option key={measure} value={measure}>
-                  {MEASURES[measure] ?? measure}
-                </option>
-              ))}
-            </Select>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted">distinct to</span>
+              <Select
+                value={resolution === null ? "none" : String(resolution)}
+                onChange={(e) =>
+                  onResolutionChange(
+                    e.target.value === "none" ? null : Number(e.target.value),
+                  )
+                }
+                className="w-auto py-1 text-xs"
+              >
+                <option value="0.05">5%</option>
+                <option value="0.01">1%</option>
+                <option value="none">every one</option>
+              </Select>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted">ranked by</span>
+              <Select
+                value={rankBy}
+                onChange={(e) => onRankChange(e.target.value)}
+                className="w-auto py-1 text-xs"
+              >
+                {rankable.map((measure) => (
+                  <option key={measure} value={measure}>
+                    {MEASURES[measure] ?? measure}
+                  </option>
+                ))}
+              </Select>
+            </div>
           </div>
         }
       >
@@ -263,7 +285,19 @@ export function Results({
         />
         <p className="mt-4 text-xs leading-relaxed text-muted">
           Showing {result.allocations?.length ?? 0} of{" "}
-          {result.n_qualifying.toLocaleString()}. They all meet the mandate —
+          {result.n_distinct !== undefined && resolution !== null ? (
+            <>
+              {result.n_distinct.toLocaleString()} meaningfully different
+              allocations, grouped to the nearest{" "}
+              {Math.round(resolution * 100)}% — 40.2% equity and 40.3% equity
+              are not two options, and listing both would offer a choice that
+              does not exist. {result.n_qualifying.toLocaleString()} qualify in
+              total
+            </>
+          ) : (
+            <>{result.n_qualifying.toLocaleString()}</>
+          )}
+          . They all meet the mandate —
           which is best depends on what you care about, so change the ranking
           rather than trusting the first row. Tick any of them to carry into{" "}
           <span className="text-ink">Across regimes</span> and see what they

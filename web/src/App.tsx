@@ -48,7 +48,12 @@ const LIMIT = 12;
 export const sampleBudget = (schedule: string): number =>
   schedule === "monthly" ? 8000 : 1500;
 
-function buildRequest(state: FormState, rankBy: string, allAssets: string[]): MandateBody {
+function buildRequest(
+  state: FormState,
+  rankBy: string,
+  allAssets: string[],
+  resolution: number | null,
+): MandateBody {
   const caps: Record<string, number> = {};
   const floors: Record<string, number> = {};
   const groupCaps: Record<string, number> = {};
@@ -91,6 +96,7 @@ function buildRequest(state: FormState, rankBy: string, allAssets: string[]): Ma
     constraints: { caps, floors, group_caps: groupCaps },
     rank_by: rankBy,
     limit: LIMIT,
+    resolution,
   };
 }
 
@@ -99,6 +105,11 @@ type View = "mandate" | "periods" | "cost";
 export default function App() {
   const [form, setForm] = useState<FormState>(INITIAL);
   const [rankBy, setRankBy] = useState("max_drawdown");
+  // Allocations closer than this are the same portfolio to anyone deciding.
+  // Five percentage points is the default because that is roughly the
+  // granularity a committee argues at; one point is available for a closer
+  // look, and null shows the raw qualifying set.
+  const [resolution, setResolution] = useState<number | null>(0.05);
   const [view, setView] = useState<View>("mandate");
   // Allocations kept aside to compare. Held by their weights, not by row
   // position: reordering the table or solving a different mandate would
@@ -125,12 +136,18 @@ export default function App() {
 
   const run = (nextRank = rankBy) => {
     if (!meta.data) return;
-    solve.mutate(buildRequest(form, nextRank, allocatable));
+    solve.mutate(buildRequest(form, nextRank, allocatable, resolution));
   };
 
   const changeRank = (value: string) => {
     setRankBy(value);
     if (solve.data?.feasible) run(value);
+  };
+
+  const changeResolution = (value: number | null) => {
+    setResolution(value);
+    if (!meta.data || !solve.data?.feasible) return;
+    solve.mutate(buildRequest(form, rankBy, allocatable, value));
   };
 
   const isSaved = (allocation: Allocation) =>
@@ -195,7 +212,7 @@ export default function App() {
    */
   const runCost = () => {
     if (!meta.data) return;
-    const request = buildRequest(form, rankBy, allocatable);
+    const request = buildRequest(form, rankBy, allocatable, resolution);
 
     if (
       Object.keys(request.constraints.caps ?? {}).length === 0 &&
@@ -362,6 +379,8 @@ export default function App() {
                   rankBy={rankBy}
                   onRankChange={changeRank}
                   rankable={meta.data.rankable}
+                  resolution={resolution}
+                  onResolutionChange={changeResolution}
                   isSaved={isSaved}
                   onToggle={toggleSaved}
                   savedCount={basket.length}

@@ -188,13 +188,28 @@ class MandateResult:
     def n_qualifying(self) -> int:
         return len(self.qualifying)
 
-    def ranked(self, by: str = "max_drawdown", limit: int | None = None) -> pd.DataFrame:
+    def ranked(
+        self,
+        by: str = "max_drawdown",
+        limit: int | None = None,
+        resolution: float | None = None,
+    ) -> pd.DataFrame:
         """The qualifying allocations, sorted however the holder prefers.
 
         Several hundred allocations routinely satisfy a mandate. Which is
         "best" among them depends on what the holder cares about, and that is
         not a question the code can settle -- so it ranks on request rather
         than choosing.
+
+        `resolution` collapses allocations that are the same portfolio to
+        anyone deciding. The qualifying set is near-continuous, so the top
+        twelve by any measure are usually neighbours differing in the third
+        decimal: 40.2% equity and 40.3% equity are not two options, and
+        presenting them as such offers a choice that does not exist.
+
+        Rounding is used for grouping only. The figures reported are the exact
+        ones from the best member of each group, so nothing is distorted -- the
+        rounding decides which rows are *the same*, not what they are.
         """
         if not self.feasible:
             return self.qualifying
@@ -205,7 +220,32 @@ class MandateResult:
             )
 
         ordered = self.qualifying.sort_values(by, ascending=not RANKABLE[by])
+
+        if resolution:
+            if not 0.0 < resolution <= 0.5:
+                raise ValueError(
+                    f"resolution must be a fraction between 0 and 0.5 "
+                    f"(0.05 for five percentage points), got {resolution}"
+                )
+            # Already sorted, so the first row of each group is its best
+            # member. Keeping that one means the figures shown belong to a
+            # real allocation rather than to a rounded average of several.
+            buckets = (ordered[self.assets] / resolution).round().astype(int)
+            ordered = ordered[~buckets.duplicated()]
+
         return ordered.head(limit) if limit else ordered
+
+    def distinct_count(self, resolution: float) -> int:
+        """How many meaningfully different allocations qualify.
+
+        Usually far fewer than the raw count. A mandate met by 3,800 sampled
+        allocations may be met by a dozen genuinely different portfolios, and
+        the second number is the one worth reporting.
+        """
+        if not self.feasible:
+            return 0
+        buckets = (self.qualifying[self.assets] / resolution).round().astype(int)
+        return int((~buckets.duplicated()).sum())
 
     def envelope(self) -> pd.DataFrame:
         """The range each asset's weight takes across qualifying allocations.

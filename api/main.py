@@ -532,8 +532,17 @@ def mandate_endpoint(request: MandateRequest) -> dict[str, Any]:
         ]
         return payload
 
-    ranked = result.ranked(request.rank_by, limit=request.limit)
+    ranked = result.ranked(
+        request.rank_by, limit=request.limit, resolution=request.resolution
+    )
     payload["ranked_by"] = request.rank_by
+    payload["resolution"] = request.resolution
+    # How many distinct portfolios exist at this resolution, as against how
+    # many rows are being shown. Without it a user cannot tell whether the
+    # table is a sample or the whole set.
+    payload["n_distinct"] = len(
+        result.ranked(request.rank_by, resolution=request.resolution)
+    )
 
     # What the commodities weight means underneath. A user allocating 20% to
     # commodities at a 60/40 slider is holding 12% gold and 8% everything else,
