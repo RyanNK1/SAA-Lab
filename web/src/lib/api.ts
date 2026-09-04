@@ -283,6 +283,26 @@ export interface CostResult {
   per_rule_note?: string;
 }
 
+export interface FrontierPoint {
+  expected_return: number;
+  volatility: number;
+  sharpe: number;
+  sortino: number;
+  max_drawdown: number;
+  [asset: string]: number;
+}
+
+export interface FrontierBody {
+  gold_weight: number;
+  assets?: string[];
+  rebalance: string;
+  cost_bps: number;
+  samples: number;
+  objective: string;
+  constraints: ConstraintSpec;
+  tolerance: number;
+}
+
 export const api = {
   meta: () => request<Meta>("/meta"),
   mandate: (body: MandateBody, signal?: AbortSignal) =>
@@ -293,4 +313,6 @@ export const api = {
     request<TrackResult>("/periods/track", body, signal),
   constraintCost: (body: CostBody, signal?: AbortSignal) =>
     request<CostResult>("/constraints/cost", body, signal),
+  frontier: (body: FrontierBody, signal?: AbortSignal) =>
+    request<{ points: FrontierPoint[] }>("/frontier", body, signal),
 };

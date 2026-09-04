@@ -428,6 +428,47 @@ def _solve_smooth(
     return w / w.sum()
 
 
+def _solve_bounded(
+    objective_fn,
+    n_assets: int,
+    bounds: list[tuple[float, float]],
+    extra: list[dict],
+    starts: list[np.ndarray],
+) -> np.ndarray:
+    """SLSQP with per-asset bounds and any additional constraints."""
+    constraints = [_budget_constraint()] + extra
+
+    best_w, best_f = None, np.inf
+    message = "no start converged"
+
+    for x0 in starts:
+        clipped = np.clip(x0, [low for low, _ in bounds], [high for _, high in bounds])
+        total = clipped.sum()
+        if total > 0:
+            clipped = clipped / total
+        result = minimize(
+            objective_fn,
+            clipped,
+            method="SLSQP",
+            bounds=bounds,
+            constraints=constraints,
+            options={"maxiter": _MAX_ITER, "ftol": _FTOL},
+        )
+        if result.success and result.fun < best_f:
+            best_w, best_f = result.x, result.fun
+            message = result.message
+
+    if best_w is None:
+        raise ValueError(
+            f"No allocation satisfies the limits: {message}. Check that the "
+            f"floors can be met and the ceilings leave room to be fully "
+            f"invested."
+        )
+
+    w = np.clip(best_w, [low for low, _ in bounds], [high for _, high in bounds])
+    return w / w.sum()
+
+
 def _starting_points(n_assets: int, seed: int = 0) -> list[np.ndarray]:
     rng = np.random.default_rng(seed)
     starts = [np.full(n_assets, 1.0 / n_assets)]
@@ -624,6 +665,8 @@ def efficient_frontier(
     n_points: int = 30,
     max_weight: float = 1.0,
     risk_free: pd.Series | float | None = None,
+    bounds: list[tuple[float, float]] | None = None,
+    extra_constraints: list[dict] | None = None,
 ) -> pd.DataFrame:
     """Lowest volatility achievable at each level of expected return.
 
@@ -631,23 +674,42 @@ def efficient_frontier(
     sit instead of being handed one answer. Points the solver cannot reach are
     dropped rather than reported with wrong numbers, so the result may be
     shorter than `n_points`.
+
+    `bounds` gives a floor and ceiling per asset, and `extra_constraints` takes
+    scipy-style dictionaries for anything spanning several assets -- a cap on
+    growth assets taken together, say. Both exist because the curve is drawn
+    behind allocations that obey real policy limits, and a curve solved without
+    them would sit below its own answers: allocations appearing *above* the
+    best attainable, which reads as a calculation error rather than a mismatch
+    of assumptions.
+
+    A single `max_weight` remains for the unconstrained case, but it cannot
+    express a floor or a group limit, and applying one asset's ceiling to every
+    asset can leave no feasible allocation at all -- five assets each capped at
+    10% cannot sum to one.
     """
     assets = panel.assets
     n = len(assets)
     mu = panel.ann_return().to_numpy()
     cov = panel.ann_cov().to_numpy()
 
-    floor_weights = _solve_smooth(
-        lambda w: w @ cov @ w, n, max_weight, _starting_points(n)
+    if bounds is None:
+        bounds = [(0.0, max_weight)] * n
+    extra = list(extra_constraints or [])
+
+    floor_weights = _solve_bounded(
+        lambda w: w @ cov @ w, n, bounds, extra, _starting_points(n)
     )
     floor = float(floor_weights @ mu)
 
-    # Highest reachable return: fill the best assets in order, up to the cap.
+    # Highest reachable return: start at the floors, then fill the best assets
+    # in order up to their ceilings until the budget is spent.
     order = np.argsort(mu)[::-1]
-    remaining, ceiling_weights = 1.0, np.zeros(n)
+    ceiling_weights = np.array([low for low, _ in bounds], dtype=float)
+    remaining = 1.0 - ceiling_weights.sum()
     for i in order:
-        take = min(max_weight, remaining)
-        ceiling_weights[i] = take
+        take = min(bounds[i][1] - ceiling_weights[i], max(remaining, 0.0))
+        ceiling_weights[i] += take
         remaining -= take
         if remaining <= 1e-12:
             break
@@ -668,16 +730,16 @@ def efficient_frontier(
         ]
         result = minimize(
             lambda w: w @ cov @ w,
-            np.full(n, 1.0 / n),
+            np.array([low for low, _ in bounds]) + (1.0 - sum(low for low, _ in bounds)) / n,
             method="SLSQP",
-            bounds=[(0.0, max_weight)] * n,
-            constraints=constraints,
+            bounds=bounds,
+            constraints=constraints + extra,
             options={"maxiter": _MAX_ITER, "ftol": _FTOL},
         )
         if not result.success:
             continue
 
-        w = np.clip(result.x, 0.0, max_weight)
+        w = np.clip(result.x, [low for low, _ in bounds], [high for _, high in bounds])
         w = w / w.sum()
         achieved = float(w @ mu)
         if abs(achieved - target) > 1e-5:

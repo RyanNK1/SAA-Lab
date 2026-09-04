@@ -838,3 +838,110 @@ def test_an_impossible_resolution_is_rejected(client):
         json={"target_return": 0.05, "resolution": 0.9, **FAST},
     )
     assert response.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# The frontier
+# ---------------------------------------------------------------------------
+
+def test_the_frontier_is_ordered_and_bends_the_right_way(client):
+    """Volatility must rise with return, and rise faster -- that curvature is
+    the whole point of the chart. A straight line would mean risk and reward
+    trade one for one, and there would be nothing to choose between."""
+    body = client.post("/api/frontier", json=FAST).json()
+    points = body["points"]
+
+    assert len(points) >= 10
+    returns = [p["expected_return"] for p in points]
+    vols = [p["volatility"] for p in points]
+
+    assert returns == sorted(returns)
+    assert vols == sorted(vols)
+
+    # Second difference non-negative: convex.
+    seconds = [
+        vols[i + 2] - 2 * vols[i + 1] + vols[i] for i in range(len(vols) - 2)
+    ]
+    assert min(seconds) > -1e-6
+
+
+def test_drawdown_deepens_faster_than_volatility_along_the_curve(client):
+    """The argument the second chart makes. If the two measures moved
+    together, one panel would do and the drawdown work would be redundant."""
+    body = client.post("/api/frontier", json=FAST).json()
+    points = body["points"]
+
+    first, last = points[0], points[-1]
+    vol_span = last["volatility"] - first["volatility"]
+    drawdown_span = first["max_drawdown"] - last["max_drawdown"]
+
+    assert drawdown_span > vol_span, (
+        "reaching for return should cost more in depth of fall than in "
+        "width of wobble"
+    )
+
+
+def test_every_frontier_point_is_a_real_allocation(client):
+    """The chart reads weights out of these points for its tooltip, so each
+    one has to be a portfolio rather than an interpolation between two."""
+    body = client.post("/api/frontier", json=FAST).json()
+    assets = ["equity", "fixed_income", "private_equity", "commodities", "cash"]
+
+    for point in body["points"]:
+        total = sum(point[asset] for asset in assets)
+        assert total == pytest.approx(1.0, abs=1e-6)
+        assert all(point[asset] >= -1e-9 for asset in assets)
+
+
+def test_the_frontier_respects_the_ceilings_it_can_apply(client):
+    """It is drawn behind the mandate's own answers, so it has to obey the
+    same rules -- otherwise qualifying allocations could appear above a curve
+    that is supposed to be the best attainable."""
+    body = client.post(
+        "/api/frontier",
+        json={"constraints": {"caps": {"private_equity": 0.10}}, **FAST},
+    ).json()
+
+    for point in body["points"]:
+        assert point["private_equity"] <= 0.10 + 1e-6
+
+
+def test_the_frontier_honours_floors_and_group_limits(client):
+    """Per-asset limits, not one ceiling applied to everything. Collapsing them
+    to a single number cannot express a floor at all, and applying one asset's
+    ceiling to every asset can leave nothing feasible -- five assets each
+    capped at 10% cannot sum to one."""
+    body = client.post(
+        "/api/frontier",
+        json={
+            "constraints": {
+                "caps": {"private_equity": 0.10},
+                "floors": {"cash": 0.05},
+                "group_caps": {"growth": 0.60},
+            },
+            **FAST,
+        },
+    ).json()
+
+    assert body["points"]
+    for point in body["points"]:
+        assert point["private_equity"] <= 0.10 + 1e-6
+        assert point["cash"] >= 0.05 - 1e-6
+        assert point["equity"] + point["private_equity"] <= 0.60 + 1e-6
+
+
+def test_different_ceilings_are_applied_to_their_own_assets(client):
+    """A 10% cap on private equity must not become a 10% cap on everything."""
+    body = client.post(
+        "/api/frontier",
+        json={
+            "constraints": {"caps": {"private_equity": 0.10, "equity": 0.40}},
+            **FAST,
+        },
+    ).json()
+
+    for point in body["points"]:
+        assert point["private_equity"] <= 0.10 + 1e-6
+        assert point["equity"] <= 0.40 + 1e-6
+    # Something else must be free to exceed 10%, or the curve is one point.
+    assert max(p["fixed_income"] + p["cash"] for p in body["points"]) > 0.5

@@ -6,6 +6,16 @@ import path from "node:path";
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: { alias: { "@": path.resolve(__dirname, "./src") } },
+  build: {
+    rollupOptions: {
+      output: {
+        // Charting is a large dependency used on one tab. Splitting it out
+        // keeps it off the first paint and lets it stay cached across deploys
+        // that only touch application code.
+        manualChunks: { charts: ["recharts"] },
+      },
+    },
+  },
   server: {
     // The API runs separately in development. Forwarding /api untouched -- not
     // stripping the prefix -- keeps the path identical to production, where a

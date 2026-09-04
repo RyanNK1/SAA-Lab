@@ -462,20 +462,69 @@ def optimize_endpoint(request: OptimizeRequest) -> dict[str, Any]:
 
 @app.post(f"{API_PREFIX}/frontier")
 def frontier_endpoint(request: OptimizeRequest) -> dict[str, Any]:
-    """The curve: lowest volatility reachable at each level of return."""
+    """The curve: lowest volatility reachable at each level of return.
+
+    Solved under the same policy limits as every other view. That matters more
+    than it sounds: the curve is drawn behind a mandate's own answers, and one
+    solved without their limits would sit below them -- allocations appearing
+    *above* the best attainable, which reads as a calculation error rather than
+    a mismatch of assumptions.
+    """
     panel, cash = prepare(request)
+    constraints = build_constraints(request.constraints, panel.assets)
+
+    bounds = [
+        (
+            constraints.floors.get(asset, 0.0),
+            min(constraints.caps.get(asset, 1.0), request_max_weight(request)),
+        )
+        for asset in panel.assets
+    ]
+
+    extra = []
+    for group in constraints.groups:
+        columns = [panel.assets.index(a) for a in group.assets]
+        if group.maximum is not None:
+            extra.append(
+                {
+                    "type": "ineq",
+                    "fun": (
+                        lambda w, c=columns, m=group.maximum: m - float(w[c].sum())
+                    ),
+                }
+            )
+        if group.minimum is not None:
+            extra.append(
+                {
+                    "type": "ineq",
+                    "fun": (
+                        lambda w, c=columns, m=group.minimum: float(w[c].sum()) - m
+                    ),
+                }
+            )
 
     try:
-        curve = efficient_frontier(panel, n_points=30, risk_free=cash)
+        curve = efficient_frontier(
+            panel,
+            n_points=30,
+            risk_free=cash,
+            bounds=bounds,
+            extra_constraints=extra,
+        )
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
 
-    return {"points": _frame_to_records(curve)}
+    return {
+        "points": _frame_to_records(curve),
+        "constraints": constraints.describe(),
+    }
 
 
-# ---------------------------------------------------------------------------
-# Mandates
-# ---------------------------------------------------------------------------
+def request_max_weight(request: OptimizeRequest) -> float:
+    """No global ceiling is exposed on this request, so limits come per asset."""
+    del request
+    return 1.0
+
 
 def _mandate_from(request: MandateRequest, assets: list[str]) -> Mandate:
     constraints = build_constraints(request.constraints, assets)

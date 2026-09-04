@@ -15,6 +15,7 @@ import {
   api,
   type Allocation,
   type CostBody,
+  type FrontierBody,
   type MandateBody,
   type TrackBody,
 } from "@/lib/api";
@@ -31,6 +32,7 @@ import { INITIAL, MandateForm, asFraction, type FormState } from "@/components/M
 import { Results } from "@/components/Results";
 import { RegimeStress } from "@/components/RegimeStress";
 import { ConstraintCost } from "@/components/ConstraintCost";
+import { Frontier } from "@/components/Frontier";
 import { Solving } from "@/components/Solving";
 import { Button, Panel } from "@/components/ui/primitives";
 
@@ -100,7 +102,7 @@ function buildRequest(
   };
 }
 
-type View = "mandate" | "periods" | "cost";
+type View = "mandate" | "periods" | "frontier" | "cost";
 
 export default function App() {
   const [form, setForm] = useState<FormState>(INITIAL);
@@ -121,6 +123,10 @@ export default function App() {
 
   const solve = useMutation({
     mutationFn: (body: MandateBody) => api.mandate(body),
+  });
+
+  const frontier = useMutation({
+    mutationFn: (body: FrontierBody) => api.frontier(body),
   });
 
   const cost = useMutation({
@@ -239,11 +245,35 @@ export default function App() {
       (limit) => limit.floor.trim() !== "" || limit.cap.trim() !== "",
     ) || form.growthCap.trim() !== "";
 
+  /** The curve of best-attainable outcomes.
+   *
+   * It depends on the assets, the period and the policy limits, but not on the
+   * mandate's own requirements -- a return target does not change what was
+   * achievable, only which part of the curve is acceptable. So it is solved
+   * separately rather than folded into the mandate response, and stays valid
+   * while the target and budget are edited.
+   */
+  const runFrontier = () => {
+    if (!meta.data) return;
+    const request = buildRequest(form, rankBy, allocatable, resolution);
+    frontier.mutate({
+      gold_weight: request.gold_weight,
+      assets: request.assets,
+      rebalance: request.rebalance,
+      cost_bps: request.cost_bps,
+      samples: 2000,
+      objective: "max_sharpe",
+      constraints: request.constraints,
+      tolerance: 0.02,
+    });
+  };
+
   const switchTo = (next: View) => {
     setView(next);
     if (next === "periods" && (basket.length > 0 || solve.data?.feasible)) {
       runTracking();
     }
+    if (next === "frontier" && frontier.isIdle) runFrontier();
     if (next === "cost" && cost.isIdle && hasLimits) runCost();
   };
 
@@ -288,6 +318,7 @@ export default function App() {
                 [
                   ["mandate", "One mandate"],
                   ["periods", "Across regimes"],
+                  ["frontier", "The frontier"],
                   ["cost", "Cost of the rules"],
                 ] as [View, string][]
               ).map(([key, label]) => (
@@ -532,6 +563,47 @@ export default function App() {
             )}
 
             {cost.data && !cost.isPending && <ConstraintCost result={cost.data} />}
+          </div>
+        )}
+
+        {meta.data && view === "frontier" && (
+          <div>
+            <div className="mb-5 flex flex-wrap items-baseline justify-between gap-4">
+              <p className="max-w-2xl text-[0.9375rem] leading-relaxed text-muted">
+                The best that was attainable at every level of risk, under the
+                policy limits from the mandate tab. Solve a mandate and its
+                qualifying allocations are drawn on top.
+              </p>
+              <Button
+                type="button"
+                variant="quiet"
+                onClick={runFrontier}
+                disabled={frontier.isPending}
+              >
+                {frontier.isPending ? "Solving…" : "Run again"}
+              </Button>
+            </div>
+
+            {frontier.isPending && (
+              <Solving samples={2000 * 12} schedule={form.rebalance} />
+            )}
+
+            {frontier.isError && (
+              <Panel title="the request was rejected">
+                <p className="text-sm leading-relaxed text-brick">
+                  {(frontier.error as Error).message}
+                </p>
+              </Panel>
+            )}
+
+            {frontier.data && !frontier.isPending && (
+              <Frontier
+                points={frontier.data.points}
+                qualifying={solve.data?.allocations}
+                targetReturn={asFraction(form.targetReturn)}
+                maxVolatility={asFraction(form.maxVolatility)}
+              />
+            )}
           </div>
         )}
 
